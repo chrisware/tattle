@@ -111,7 +111,7 @@ describe("parseAppConfig", () => {
     delete a.transcription.apple;
     const parsed = parseAppConfig(a);
     expect(parsed.transcription.live).toBeUndefined();
-    expect(parsed.jev.provider).toBeUndefined();
+    expect("provider" in parsed.jev).toBe(false);
     expect(parsed.transcription.apple).toEqual({ locale: "en-US", clipPadMs: 300, clipConcurrency: 2, clipTimeoutMs: 20000 });
     const b = app();
     b.transcription.apple = {};
@@ -149,8 +149,8 @@ describe("parseAppConfig", () => {
     const a = cfg.app;
     expect(a.server.port).toBe(4317);
     expect(a.jev).toEqual({
-      model: "typesafe/jev-1.13", utteranceTimeoutMs: 3000, segmentTimeoutMs: 5000, maxAttempts: 2, backgroundTimeoutMs: 30000,
-      backgroundMaxAttempts: 5, concurrency: 8, segmentConcurrency: 4, provider: { data_collection: "deny" },
+      model: "jev-1.13.0", utteranceTimeoutMs: 3000, segmentTimeoutMs: 5000, maxAttempts: 2, backgroundTimeoutMs: 30000,
+      backgroundMaxAttempts: 5, concurrency: 8, segmentConcurrency: 4,
     });
     expect(a.s2).toMatchObject({
       model: "openai/gpt-6-luna",

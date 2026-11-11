@@ -6,7 +6,7 @@
 import type { AppConfig } from "../config.ts";
 import type { Budget } from "../budget.ts";
 import { backoffMs, classifyError, effectiveStatus, HttpError, parseRetryAfter } from "../jev/client.ts";
-import { CHAT_URL } from "../factcheck/s2.ts";
+import { openaiWireModel, s2ChatUrl, s2HostIsOpenAI } from "../factcheck/s2.ts";
 import { ICONS } from "../../web/src/icons.ts";
 import { checkLabelSet, LABEL_FORMAT, LIMITS, type LabelSet } from "./model.ts";
 import { checklistText, interviewChecklist, type Checklist } from "./interview.ts";
@@ -176,17 +176,16 @@ export class LabelsAssistant {
   private async call(system: string, messages: AssistMessage[]): Promise<{ content: string; cost: number }> {
     this.deps.budget.assertCanSpend("labels_assist");
     const body = JSON.stringify({
-      model: this.cfg.model,
+      model: openaiWireModel(this.cfg.model),
       messages: [{ role: "system", content: system }, ...messages],
-      reasoning: { effort: this.cfg.effort },
-      provider: this.cfg.provider,
+      ...(s2HostIsOpenAI() ? { reasoning_effort: this.cfg.effort } : { reasoning: { effort: this.cfg.effort } }),
       response_format: { type: "json_schema", json_schema: { name: "label_set_draft", strict: true, schema: ASSIST_JSON_SCHEMA } },
     });
     const started = Date.now();
     for (let attempt = 1; ; attempt++) {
       try {
         const raw = await this.send(body);
-        const cost = raw.usage.cost as number;
+        const cost = typeof raw.usage?.cost === "number" ? raw.usage.cost : 0;
         this.deps.budget.record("s2", cost);
         const msg = raw.choices?.[0]?.message;
         const content = typeof msg?.content === "string" ? msg.content : Array.isArray(msg?.content) ? msg.content.map((c: any) => c?.text ?? "").join("") : "";
@@ -197,8 +196,8 @@ export class LabelsAssistant {
         if (cls === "fail" || attempt >= this.cfg.maxAttempts) {
           this.log({ ok: false, attempt, started, error: e instanceof Error ? e.message : String(e) });
           const status = e instanceof HttpError ? effectiveStatus(e) : null;
-          if (status === 401) throw new AssistError(401, "OpenRouter rejected the API key (401): replace it in API keys.");
-          if (status === 402) throw new AssistError(402, "OpenRouter says the credit or the key's limit is used up (402): add credit at openrouter.ai.");
+          if (status === 401) throw new AssistError(401, "OpenAI rejected the API key (401): replace it in API keys.");
+          if (status === 402) throw new AssistError(402, "OpenAI says the credit or the key's limit is used up (402).");
           throw new AssistError(502, `GPT-6 Luna did not answer: ${e instanceof Error ? e.message : String(e)}`);
         }
         const wait = backoffMs(attempt, e instanceof HttpError ? e.retryAfterMs : null);
@@ -211,9 +210,9 @@ export class LabelsAssistant {
     let res: Response;
     let text: string;
     try {
-      res = await this.deps.fetch(CHAT_URL, {
+      res = await this.deps.fetch(s2ChatUrl(), {
         method: "POST",
-        headers: { Authorization: `Bearer ${this.deps.apiKey}`, "Content-Type": "application/json", "X-OpenRouter-Title": "Tattle" },
+        headers: { Authorization: `Bearer ${this.deps.apiKey}`, "Content-Type": "application/json" },
         body, signal: AbortSignal.timeout(this.cfg.timeoutMs),
       });
       text = await res.text();
@@ -229,7 +228,7 @@ export class LabelsAssistant {
       throw new HttpError(res.status, text, retryAfterMs);
     }
     if (json.error) throw new HttpError(res.status, text, retryAfterMs);
-    if (typeof json.usage?.cost !== "number") throw new HttpError(-1, text, null, "response without usage.cost rejected");
+
     return json;
   }
 

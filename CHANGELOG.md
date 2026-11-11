@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- Chat, label drafting, and fact-check research call OpenAI directly. Jev stays on TypeSafe. OpenRouter is no longer a key, a catalogue, or a credit check.
+
 ## [1.1.0] - 2026-10-28
 
 ### Added

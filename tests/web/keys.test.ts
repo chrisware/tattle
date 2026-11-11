@@ -16,13 +16,14 @@ const load = async (desktop?: unknown): Promise<Keys> => {
 };
 
 const OPENAI = "sk-proj-abcdefghijklmnopqrstuvwx";
+const TYPESAFE = "ts-abcdefghijklmnopqrstuvwxyz";
 const OPENROUTER = "sk-or-v1-abcdefghijklmnopqrstuvwx";
-const keyStatus = (name: "openai" | "openrouter", o: Partial<KeyStatus> = {}): KeyStatus =>
-  ({ name, env: name === "openai" ? "OPENAI_API_KEY" : "OPENROUTER_API_KEY", set: false, source: null, hint: null, ...o });
+const keyStatus = (name: "openai" | "typesafe", o: Partial<KeyStatus> = {}): KeyStatus =>
+  ({ name, env: name === "openai" ? "OPENAI_API_KEY" : "TYPESAFE_API_KEY", set: false, source: null, hint: null, ...o });
 const status = (o: Partial<SetupStatus> = {}): SetupStatus =>
-  ({ configured: false, required: ["openai"], keys: [keyStatus("openai"), keyStatus("openrouter")], path: "~/Library/Application Support/Tattle/credentials.json", ...o });
+  ({ configured: false, required: ["openai"], keys: [keyStatus("openai"), keyStatus("typesafe")], path: "~/Library/Application Support/Tattle/credentials.json", ...o });
 const saved = (o: Partial<SaveKeysResult> = {}): SaveKeysResult => ({
-  ...status({ configured: true, keys: [keyStatus("openai", { set: true, source: "file", hint: "wxyz" }), keyStatus("openrouter", { set: true, source: "file", hint: "abcd" })] }),
+  ...status({ configured: true, keys: [keyStatus("openai", { set: true, source: "file", hint: "wxyz" }), keyStatus("typesafe", { set: true, source: "file", hint: "abcd" })] }),
   saved: true, checks: {}, ...o,
 });
 const trans = (o: Partial<TranscriptionStatus> = {}, apple: Partial<TranscriptionStatus["apple"]> = {}): TranscriptionStatus => ({
@@ -50,10 +51,10 @@ describe("the api mock (U10)", () => {
 describe("setupStatus, keySet, and the transcription state", () => {
   test("setupStatus returns the status and remembers it for keySet; a failure gives null", async () => {
     const k = await load();
-    expect(k.keySet("openrouter")).toBe(false);
-    fake.setup!.mockResolvedValue(status({ keys: [keyStatus("openai"), keyStatus("openrouter", { set: true })] }));
+    expect(k.keySet("typesafe")).toBe(false);
+    fake.setup!.mockResolvedValue(status({ keys: [keyStatus("openai"), keyStatus("typesafe", { set: true })] }));
     await k.setupStatus();
-    expect([k.keySet("openai"), k.keySet("openrouter")]).toEqual([false, true]);
+    expect([k.keySet("openai"), k.keySet("typesafe")]).toEqual([false, true]);
     fake.setup!.mockRejectedValue(new Error("503"));
     expect(await k.setupStatus()).toBeNull();
   });
@@ -90,7 +91,7 @@ describe("the first-run screen", () => {
     expect(text("#setup .setup-progress")).toBe("0 of 2 keys added");
     expect(document.activeElement).toBe(inputs()[0]);
     expect(all("#setup .setup-badge").map((b) => b.textContent)).toEqual(["Required", "Required"]);
-    expect(inputs().map((i) => i.getAttribute("aria-label"))).toEqual(["OpenAI API key", "OpenRouter API key"]);
+    expect(inputs().map((i) => i.getAttribute("aria-label"))).toEqual(["OpenAI API key", "TypeSafe API key"]);
   });
 
   test("with OpenAI's key alone missing: one field, no step numbers, 'Save key and start', '0 of 1 key added'", async () => {
@@ -106,7 +107,7 @@ describe("the first-run screen", () => {
 
   test("a key already set or not required gets no field", async () => {
     const k = await load();
-    k.showSetup(status({ required: ["openai", "openrouter"], keys: [keyStatus("openai"), keyStatus("openrouter", { set: true })] }));
+    k.showSetup(status({ required: ["openai", "typesafe"], keys: [keyStatus("openai"), keyStatus("typesafe", { set: true })] }));
     expect(fields()).toHaveLength(1);
   });
 
@@ -134,13 +135,13 @@ describe("the first-run screen", () => {
 
   test("typing a key that looks right marks the field ok and counts it", async () => {
     const k = await load();
-    k.showSetup(status({ required: ["openai", "openrouter"] }));
+    k.showSetup(status({ required: ["openai", "typesafe"] }));
     type(inputs()[0]!, `  ${OPENAI} `);
     expect(fields()[0]!.className).toBe("setup-field ok");
     expect(text("#setup .setup-badge")).toBe("✓ Looks right");
     expect(text("#setup .setup-progress")).toBe("1 of 2 keys added");
     expect(all("#setup .setup-progress.done")).toHaveLength(0);
-    type(inputs()[1]!, OPENROUTER);
+    type(inputs()[1]!, TYPESAFE);
     expect(text("#setup .setup-progress")).toBe("Both keys added: press Save keys and start");
     expect(all("#setup .setup-progress.done, #setup .setup-go.armed")).toHaveLength(2);
   });
@@ -154,13 +155,13 @@ describe("the first-run screen", () => {
 
   test.each([
     ["openai", "sk-proj abc defghijklmnopqrstu", "A key has no spaces or line breaks: copy it again."],
-    ["openai", OPENROUTER, "This is an OpenRouter key: paste it in the OpenRouter field."],
-    ["openrouter", OPENAI, "This looks like an OpenAI key: OpenRouter keys start with sk-or-."],
+    ["openai", OPENROUTER, "OpenRouter keys are not used. Paste an OpenAI key in the OpenAI field, or a TypeSafe key in the TypeSafe field."],
+    ["typesafe", OPENAI, "This looks like an OpenAI key: paste it in the OpenAI field."],
     ["openai", "sk-short", "This looks too short to be a whole key."],
-    ["openrouter", "sk-or-short", "This looks too short to be a whole key."],
+    ["typesafe", "ts-short", "This looks too short to be a whole key."],
   ])("a %s field with %j says: %s", async (name, value, message) => {
     const k = await load();
-    k.showSetup(status({ required: ["openai", "openrouter"] }));
+    k.showSetup(status({ required: ["openai", "typesafe"] }));
     const i = name === "openai" ? 0 : 1;
     type(inputs()[i]!, value);
     expect(fields()[i]!.classList.contains("bad")).toBe(true);
@@ -169,11 +170,14 @@ describe("the first-run screen", () => {
     expect(all("#setup .setup-field .key-msg")[i]!.textContent).toBe(message);
   });
 
-  test("an OpenRouter key of 20+ characters is accepted in its field", async () => {
+  test("a TypeSafe key of 20+ characters is accepted; an OpenRouter key is not", async () => {
     const k = await load();
-    k.showSetup(status({ required: ["openrouter"] }));
-    type(inputs()[0]!, OPENROUTER);
+    k.showSetup(status({ required: ["typesafe"] }));
+    type(inputs()[0]!, TYPESAFE);
     expect(fields()[0]!.className).toBe("setup-field ok");
+    type(inputs()[0]!, OPENROUTER);
+    expect(fields()[0]!.classList.contains("bad")).toBe(true);
+    expect(text("#setup .setup-field .key-msg")).toBe("OpenRouter keys are not used. Paste an OpenAI key in the OpenAI field, or a TypeSafe key in the TypeSafe field.");
   });
 
   test("clearing a field puts it back to Required with no message", async () => {
@@ -186,7 +190,7 @@ describe("the first-run screen", () => {
 
   test("Save with an empty field asks for it, focuses it, and sends nothing", async () => {
     const k = await load();
-    k.showSetup(status({ required: ["openai", "openrouter"] }));
+    k.showSetup(status({ required: ["openai", "typesafe"] }));
     type(inputs()[0]!, OPENAI);
     button("Save keys and start")!.click();
     await flush();
@@ -210,19 +214,19 @@ describe("the first-run screen", () => {
     const k = await load();
     const answer = later<SaveKeysResult>();
     fake.saveKeys!.mockReturnValue(answer.promise);
-    k.showSetup(status({ required: ["openai", "openrouter"] }));
+    k.showSetup(status({ required: ["openai", "typesafe"] }));
     type(inputs()[0]!, ` ${OPENAI} `);
-    type(inputs()[1]!, OPENROUTER);
+    type(inputs()[1]!, TYPESAFE);
     const other = key(inputs()[1]!, "a");
     expect(other.defaultPrevented).toBe(false);
     expect(key(inputs()[1]!, "Enter").defaultPrevented).toBe(true);
     const save = document.querySelector<HTMLButtonElement>("#setup .setup-go")!;
     expect([save.disabled, save.textContent]).toEqual([true, "Checking your keys…"]);
-    expect(all("#setup .setup-field .key-msg").map((m) => m.textContent)).toEqual(["Checking with OpenAI…", "Checking with OpenRouter…"]);
+    expect(all("#setup .setup-field .key-msg").map((m) => m.textContent)).toEqual(["Checking with OpenAI…", "Checking with TypeSafe…"]);
     save.click();
     key(inputs()[0]!, "Enter");
     expect(fake.saveKeys).toHaveBeenCalledTimes(1);
-    expect(fake.saveKeys).toHaveBeenCalledWith({ openai: OPENAI, openrouter: OPENROUTER });
+    expect(fake.saveKeys).toHaveBeenCalledWith({ openai: OPENAI, typesafe: TYPESAFE });
     answer.resolve(saved({ saved: false, checks: { openai: { ok: true, message: "Key works" } } }));
     await flush();
     expect([save.disabled, save.textContent]).toEqual([false, "Save keys and start"]);
@@ -232,11 +236,11 @@ describe("the first-run screen", () => {
     const k = await load();
     fake.saveKeys!.mockResolvedValue(saved({
       saved: false, keys: status().keys,
-      checks: { openai: { ok: false, message: "OpenAI refused this key (401)" }, openrouter: { ok: true, message: "Key works" } },
+      checks: { openai: { ok: false, message: "OpenAI refused this key (401)" }, typesafe: { ok: true, message: "Key works" } },
     }));
-    k.showSetup(status({ required: ["openai", "openrouter"] }));
+    k.showSetup(status({ required: ["openai", "typesafe"] }));
     type(inputs()[0]!, OPENAI);
-    type(inputs()[1]!, OPENROUTER);
+    type(inputs()[1]!, TYPESAFE);
     button("Save keys and start")!.click();
     await flush();
     const msgs = all("#setup .setup-field .key-msg");
@@ -324,7 +328,7 @@ describe("the first-run screen", () => {
   // key missing, so this is an edge; the screen should still render (a generic title) rather than throw.
   test.fails("BUG §14.5: an unconfigured status with no missing key still shows the screen", async () => {
     const k = await load();
-    expect(() => k.showSetup(status({ keys: [keyStatus("openai", { set: true }), keyStatus("openrouter")] }))).not.toThrow();
+    expect(() => k.showSetup(status({ keys: [keyStatus("openai", { set: true }), keyStatus("typesafe")] }))).not.toThrow();
   });
 });
 
@@ -332,12 +336,12 @@ describe("keyPrompt: a key asked for where it is needed", () => {
   test("shows the heading, the card with its guide open, Save, and Not now; focuses the field next frame", async () => {
     const k = await load();
     const onCancel = vi.fn();
-    const el = k.keyPrompt("openrouter", "Please provide your OpenRouter API key to use Chat.", { onSaved: vi.fn(), onCancel });
+    const el = k.keyPrompt("typesafe", "Please provide your TypeSafe API key to run Jev.", { onSaved: vi.fn(), onCancel });
     document.body.append(el);
-    expect([el.getAttribute("role"), el.getAttribute("aria-label")]).toEqual(["group", "Please provide your OpenRouter API key to use Chat."]);
-    expect(text(".key-prompt-h", el)).toBe("Please provide your OpenRouter API key to use Chat.");
+    expect([el.getAttribute("role"), el.getAttribute("aria-label")]).toEqual(["group", "Please provide your TypeSafe API key to run Jev."]);
+    expect(text(".key-prompt-h", el)).toBe("Please provide your TypeSafe API key to run Jev.");
     expect(el.querySelector("details.key-how")!.hasAttribute("open")).toBe(true);
-    expect(text(".key-needed", el)).toBe(" Needed for fact-checking, labels, and Chat.");
+    expect(text(".key-needed", el)).toBe(" Needed for fact-checking and labels.");
     await new Promise((r) => requestAnimationFrame(r));
     expect(document.activeElement).toBe(el.querySelector("input"));
     button("Not now", el)!.click();
@@ -347,18 +351,18 @@ describe("keyPrompt: a key asked for where it is needed", () => {
   test("Save with nothing typed asks for the key; with a key, it saves, remembers the status, and calls onSaved", async () => {
     const k = await load();
     const onSaved = vi.fn();
-    const el = k.keyPrompt("openrouter", "h", { onSaved });
+    const el = k.keyPrompt("typesafe", "h", { onSaved });
     document.body.append(el);
     expect(button("Not now", el)).toBeUndefined();
     button("Save", el)!.click();
     await flush();
     expect(text(".key-actions .key-msg", el)).toBe("Paste the key to save it.");
-    fake.saveKeys!.mockResolvedValue(saved({ checks: { openrouter: { ok: true, message: "Key works" } } }));
-    type(el.querySelector("input")!, OPENROUTER);
+    fake.saveKeys!.mockResolvedValue(saved({ checks: { typesafe: { ok: true, message: "Key works" } } }));
+    type(el.querySelector("input")!, TYPESAFE);
     key(el.querySelector("input")!, "Enter");
     await flush();
-    expect(fake.saveKeys).toHaveBeenCalledWith({ openrouter: OPENROUTER });
-    expect([onSaved.mock.calls.length, k.keySet("openrouter"), text(".key-actions .key-msg", el)]).toEqual([1, true, ""]);
+    expect(fake.saveKeys).toHaveBeenCalledWith({ typesafe: TYPESAFE });
+    expect([onSaved.mock.calls.length, k.keySet("typesafe"), text(".key-actions .key-msg", el)]).toEqual([1, true, ""]);
     expect(text(".key-card .key-chip", el)).toBe("Saved · …abcd");
   });
 
@@ -399,21 +403,21 @@ describe("keyPrompt: a key asked for where it is needed", () => {
 
   test("a key set in the environment shows no field and no Save", async () => {
     const k = await load();
-    fake.setup!.mockResolvedValue(status({ keys: [keyStatus("openai"), keyStatus("openrouter", { set: true, source: "environment", hint: "9999" })] }));
+    fake.setup!.mockResolvedValue(status({ keys: [keyStatus("openai"), keyStatus("typesafe", { set: true, source: "environment", hint: "9999" })] }));
     await k.setupStatus();
-    const el = k.keyPrompt("openrouter", "h", { onSaved: vi.fn() });
+    const el = k.keyPrompt("typesafe", "h", { onSaved: vi.fn() });
     expect(el.querySelector("input")).toBeNull();
     expect(button("Save", el)).toBeUndefined();
     expect(text(".key-chip", el)).toBe(".env · …9999");
-    expect(text(".key-card .note", el)).toBe("Set by OPENROUTER_API_KEY in .env or your shell, which wins over this page: change it there.");
+    expect(text(".key-card .note", el)).toBe("Set by TYPESAFE_API_KEY in .env or your shell, which wins over this page: change it there.");
   });
 
   // keys.ts: the guides' links are single <a> nodes made once at import, and each render of the steps appends the same
   // nodes, so a second card showing at the same time takes them from the first (inventory 4 §14.4).
   test.fails("BUG §14.4: two cards shown at once each keep their guide's links", async () => {
     const k = await load();
-    const a = k.keyPrompt("openrouter", "a", { onSaved: vi.fn() });
-    const b = k.keyPrompt("openrouter", "b", { onSaved: vi.fn() });
+    const a = k.keyPrompt("openai", "a", { onSaved: vi.fn() });
+    const b = k.keyPrompt("openai", "b", { onSaved: vi.fn() });
     expect([a.querySelectorAll(".key-steps a").length, b.querySelectorAll(".key-steps a").length]).toEqual([3, 3]);
   });
 });
@@ -435,25 +439,40 @@ describe("the API keys window", () => {
 
   test("shows both cards, each with its chip or placeholder, when it is needed, and the file", async () => {
     const k = await load();
-    fake.setup!.mockResolvedValue(status({ configured: true, keys: [keyStatus("openai", { set: true, source: "file", hint: "1234" }), keyStatus("openrouter")] }));
+    fake.setup!.mockResolvedValue(status({ configured: true, keys: [keyStatus("openai", { set: true, source: "file", hint: "1234" }), keyStatus("typesafe")] }));
     await k.renderKeys(vi.fn());
-    expect(all("#keys .key-card h2").map((h) => h.textContent)).toEqual(["OpenAI", "OpenRouter"]);
+    expect(all("#keys .key-card h2").map((h) => h.textContent)).toEqual(["OpenAI", "TypeSafe"]);
     expect(all("#keys .key-chip").map((c) => c.textContent)).toEqual(["Saved · …1234", ""]);
-    expect((all("#keys input") as HTMLInputElement[]).map((i) => i.placeholder)).toEqual(["Paste a new key to replace …1234", "sk-or-v1-…"]);
-    expect(all("#keys .key-needed").map((n) => n.textContent)).toEqual([" Needed only for OpenAI transcription.", " Needed for fact-checking, labels, and Chat."]);
+    expect((all("#keys input") as HTMLInputElement[]).map((i) => i.placeholder)).toEqual(["Paste a new key to replace …1234", "paste the key"]);
+    expect(all("#keys .key-needed").map((n) => n.textContent)).toEqual([" Needed for transcription, Chat, label drafting, and fact-check research.", " Needed for fact-checking and labels."]);
     expect(all("#keys details.key-how").map((d) => d.hasAttribute("open"))).toEqual([false, false]);
-    expect(text("#keys > .note")).toBe("Neither key is needed to open the app. Saved keys are in ~/Library/Application Support/Tattle/credentials.json, readable only by your macOS user.");
+    expect(all("#keys > .note").map((n) => n.textContent)).toEqual([
+      "Model choices are not available.",
+      "Saved keys are in ~/Library/Application Support/Tattle/credentials.json, readable only by your macOS user. Model choices are saved with the other settings.",
+    ]);
+  });
+
+  test("a model-choices payload renders one select per job", async () => {
+    const k = await load();
+    fake.modelChoices!.mockResolvedValue({
+      models: ["openai/gpt-6-luna", "openai/gpt-6-sol"],
+      saved: {},
+      effective: { chat: "openai/gpt-6-luna", labels: "openai/gpt-6-sol", s2: "openai/gpt-6-luna" },
+    });
+    fake.setup!.mockResolvedValue(status({ configured: true }));
+    await k.renderKeys(vi.fn());
+    expect(all("#keys select").map((s) => s.getAttribute("aria-label"))).toEqual(["Chat", "Label drafting", "Fact-check research"]);
   });
 
   test("a key from the environment has no field; with both from it, there is nothing to save", async () => {
     const k = await load();
-    const env = (n: "openai" | "openrouter") => keyStatus(n, { set: true, source: "environment", hint: "1234" });
-    fake.setup!.mockResolvedValue(status({ keys: [env("openai"), keyStatus("openrouter")] }));
+    const env = (n: "openai" | "typesafe") => keyStatus(n, { set: true, source: "environment", hint: "1234" });
+    fake.setup!.mockResolvedValue(status({ keys: [env("openai"), keyStatus("typesafe")] }));
     await k.renderKeys(vi.fn());
     expect(all("#keys .key-chip")[0]!.textContent).toBe(".env · …1234");
     expect(all("#keys input")).toHaveLength(1);
     expect(document.querySelector<HTMLElement>("#keys .key-actions")!.hidden).toBe(false);
-    fake.setup!.mockResolvedValue(status({ keys: [env("openai"), env("openrouter")] }));
+    fake.setup!.mockResolvedValue(status({ keys: [env("openai"), env("typesafe")] }));
     await k.renderKeys(vi.fn());
     expect(document.querySelector<HTMLElement>("#keys .key-actions")!.hidden).toBe(true);
   });
@@ -467,11 +486,11 @@ describe("the API keys window", () => {
     await flush();
     expect(text("#keys .key-actions .key-msg")).toBe("Paste a key to save.");
     expect(fake.saveKeys).not.toHaveBeenCalled();
-    fake.saveKeys!.mockResolvedValue(saved({ checks: { openrouter: { ok: true, message: "Key works" } } }));
-    type(all("#keys input")[1] as HTMLInputElement, OPENROUTER);
+    fake.saveKeys!.mockResolvedValue(saved({ checks: { typesafe: { ok: true, message: "Key works" } } }));
+    type(all("#keys input")[1] as HTMLInputElement, TYPESAFE);
     button("Save", document.getElementById("keys")!)!.click();
     await flush();
-    expect(fake.saveKeys).toHaveBeenCalledWith({ openrouter: OPENROUTER });
+    expect(fake.saveKeys).toHaveBeenCalledWith({ typesafe: TYPESAFE });
     expect(onSaved).toHaveBeenCalledWith("API key saved: the next call uses it");
   });
 
@@ -576,7 +595,7 @@ describe("the Transcription window", () => {
     const k = await load();
     const onSaved = vi.fn();
     fake.transcription!.mockResolvedValue(trans({ engine: "openai" }));
-    fake.setup!.mockResolvedValue(status({ configured: true, keys: [keyStatus("openai", { set: true }), keyStatus("openrouter")] }));
+    fake.setup!.mockResolvedValue(status({ configured: true, keys: [keyStatus("openai", { set: true }), keyStatus("typesafe")] }));
     fake.setTranscription!.mockResolvedValue(trans({ engine: "apple" }));
     await k.renderTranscription(onSaved);
     radios()[1]!.click();

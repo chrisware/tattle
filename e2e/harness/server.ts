@@ -7,7 +7,7 @@
 //   E2E_TMP=<dir>         where sessions, keys, settings and label sets live (required)
 //   E2E_KEYS=missing      start with no keys (the first-run screen)
 //   E2E_REFUSE_KEYS=<s>   key checks refuse keys containing <s>
-//   E2E_402=1             OpenRouter answers every Jev call with a non-transient 402 (credit used up)
+//   E2E_402=1             the Jev provider answers every call with a non-transient 402
 //   E2E_SEED=library      two recordings in the library before the page loads
 //   E2E_LIVE=hold         Start live captures silence until stopped (scripted scenarios); otherwise the fixture at 1×
 //   E2E_LIVE_TEXT=off     no live text
@@ -26,7 +26,8 @@ import type { ServerResponse } from "node:http";
 globalThis.fetch = (() => { throw new Error("network disabled in E2E"); }) as typeof fetch;
 globalThis.WebSocket = class { constructor() { throw new Error("network disabled in E2E"); } } as unknown as typeof WebSocket;
 delete process.env.OPENAI_API_KEY;
-delete process.env.OPENROUTER_API_KEY;
+delete process.env.TYPESAFE_API_KEY;
+delete process.env.OPENROUTER_API_KEY; // a leftover OpenRouter key is stripped and never saved
 
 const tmp = process.env.E2E_TMP;
 if (!tmp || !process.env.HOME?.startsWith(tmp) || !process.env.TATTLE_CREDENTIALS?.startsWith(tmp) || !process.env.TATTLE_SETTINGS?.startsWith(tmp)
@@ -66,13 +67,13 @@ if (process.env.E2E_SEED === "library") {
 
 const keys = new KeyStore({ path: process.env.TATTLE_CREDENTIALS }).load();
 if (process.env.E2E_KEYS !== "missing" && keys.missing().length) {
-  keys.save({ openai: "sk-proj-e2e-000000000000000000000000abcd", openrouter: "sk-or-v1-e2e-00000000000000000000000000001234" });
+  keys.save({ openai: "sk-proj-e2e-000000000000000000000000abcd", typesafe: "ts-e2e-0000000000000000000000000000" });
 }
 const config = loadConfig();
 if (process.env.E2E_LIVE_TEXT === "off" && config.app.transcription.live) config.app.transcription.live.enabled = false;
-const fx = e2eFetch(loadScript(), { openrouter402: process.env.E2E_402 === "1", refuseKeysWith: process.env.E2E_REFUSE_KEYS });
+const fx = e2eFetch(loadScript(), { jev402: process.env.E2E_402 === "1", refuseKeysWith: process.env.E2E_REFUSE_KEYS });
 
-const keySet = (name: "openai" | "openrouter") => keys.status().some((k) => k.name === name && k.set);
+const keySet = (name: "openai" | "typesafe") => keys.status().some((k) => k.name === name && k.set);
 let engine: InstanceType<typeof Engine> | null = null;
 // Apple Speech is never available here: it would start the real on-device helper. Sessions transcribe with the fake OpenAI.
 const transcription = new TranscriptionSettings({

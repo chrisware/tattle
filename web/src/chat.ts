@@ -124,8 +124,8 @@ export function bindChat(opts: { onTime: (ms: number) => void }) {
 let modelsAsked = false;
 
 /**
- * The model list (names, context sizes, prices) comes from OpenRouter, so it is asked for only once Chat opens with
- * the key set: a transcript-only show on this Mac then contacts nothing (see docs/chat.md).
+ * The model list comes from the server (configured OpenAI models plus any saved custom id). It is asked for only once
+ * Chat opens with the key set: a transcript-only show on this Mac then contacts nothing (see docs/chat.md).
  */
 function loadModels() {
   if (modelsAsked) return;
@@ -139,7 +139,7 @@ function autosize() {
   t.style.height = `${Math.min(t.scrollHeight, 200)}px`;
 }
 
-/** Opens the chat window (the header's Chat button and ⌘K); without an OpenRouter key it asks for one first. */
+/** Opens the chat window (the header's Chat button and ⌘K); without an OpenAI key it asks for one first. */
 export function openChat() {
   const d = $<HTMLDialogElement>("#dlg-chat");
   if (!d) return;
@@ -150,15 +150,15 @@ export function openChat() {
   chatOpened();
 }
 
-/** Chat asks OpenRouter's models: without its key, the window shows the key's card instead, and saving opens the chat. */
+/** Chat uses the OpenAI key: without it, the window shows the key's card instead, and saving opens the chat. */
 function needKey(): boolean {
   const box = $("#chat-key"), chat = $("#chat");
   if (!box || !chat) return false;
-  const missing = !keySet("openrouter");
+  const missing = !keySet("openai");
   box.hidden = !missing;
   chat.hidden = missing;
   if (missing && !box.childElementCount) {
-    replace(box, keyPrompt("openrouter", "Please provide your OpenRouter API key to use Chat.", {
+    replace(box, keyPrompt("openai", "Please provide your OpenAI API key to use Chat.", {
       onSaved: () => { replace(box); needKey(); chatOpened(); },
     }));
   }
@@ -433,7 +433,7 @@ function drawModelList() {
     shown.map((m, i) => h("button", {
       class: `model-row${m.id === active ? " current" : ""}${i === modelActive ? " active" : ""}`, role: "option",
       disabled: m.available === false, "aria-selected": String(m.id === active),
-      title: m.available === false ? "OpenRouter no longer lists this model" : m.id,
+      title: m.available === false ? "This model is not available" : m.id,
       onclick: () => void pickModel(m.id),
       onpointermove: () => { if (modelActive !== i) { modelActive = i; document.querySelectorAll("#model-list .model-row").forEach((r, k) => r.classList.toggle("active", k === i)); } },
     },

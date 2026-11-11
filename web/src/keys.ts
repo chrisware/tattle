@@ -1,9 +1,7 @@
-// The API keys and the transcription engine: the first-run setup screen, shown instead of the app until the keys the
-// engine needs are set (only OpenAI's, and only when transcribing with OpenAI); the prompt for a key when a feature
-// needs it (OpenRouter, for fact-checking, labels, and chat); the API keys window (cog menu) to replace one later; and
-// the Transcription window. The server checks each key before saving it; it never sends a key back, only its last 4
-// characters (see docs/setup.md).
-import { api, type KeyName, type KeyStatus, type SaveKeysResult, type SetupStatus, type TranscriptionEngine, type TranscriptionStatus } from "./api.js";
+// The setup screen (shown until the keys the transcription engine needs are set), the prompt for a key when a feature
+// needs it (TypeSafe for Jev, OpenAI for chat, label drafting, and transcription), and the API keys window. The server
+// checks each key before saving it; it never sends a key back, only its last 4 characters (see docs/setup.md).
+import { api, type KeyName, type KeyStatus, type ModelChoiceView, type SaveKeysResult, type SetupStatus, type TranscriptionEngine, type TranscriptionStatus } from "./api.js";
 import { $, h, replace, s } from "./dom.js";
 import { desktop } from "./desktop.js";
 
@@ -22,9 +20,9 @@ const link = (href: string, text: string) => h("a", { href, target: "_blank", re
 const GUIDES: Record<KeyName, Guide> = {
   openai: {
     title: "OpenAI",
-    role: "Transcription with OpenAI",
-    short: "Turns what is said into text.",
-    what: "Turns what is said into text, live as people speak and again when they finish, when OpenAI transcribes instead of this Mac. It is most of the cost of a show: about $1.23 an hour.",
+    role: "Transcription, Chat, and label drafting",
+    short: "Turns speech into text, and runs Chat and label drafting.",
+    what: "One key for transcription, the chat window, label drafting, and fact-check research. Jev, which labels the show and spots claims, uses TypeSafe instead.",
     steps: [
       ["Sign in, or create an account, at ", link("https://platform.openai.com/signup", "platform.openai.com"), ". This is OpenAI's developer site, separate from a ChatGPT subscription."],
       ["Add credit: ", link("https://platform.openai.com/settings/organization/billing/overview", "Settings → Billing"), " → Add to credit balance. $10 is plenty to start. Leave automatic recharge off, so you are never charged more than you added."],
@@ -33,18 +31,17 @@ const GUIDES: Record<KeyName, Guide> = {
     ],
     placeholder: "sk-…",
   },
-  openrouter: {
-    title: "OpenRouter",
-    role: "Jev, fact-checking, and chat",
-    short: "Runs Jev, fact-checking, and chat.",
-    what: "One account for many AI models. The app uses it for Jev, which labels the show and spots claims on every line; for GPT-6 Luna, which researches those claims; and for the chat window. Up to about $0.40 an hour, plus any chat.",
+
+  typesafe: {
+    title: "TypeSafe",
+    role: "Jev fact-checking and labels",
+    short: "Runs Jev for fact-checking and labels.",
+    what: "Jev flags claims on every line and labels the show. It is TypeSafe's own API, not a chat model. About $0.04 an hour of line checks; output tokens are free.",
     steps: [
-      ["Sign in, or create an account, at ", link("https://openrouter.ai", "openrouter.ai"), "."],
-      ["Add credit: ", link("https://openrouter.ai/settings/credits", "Settings → Credits"), " → Add credits. $10 is plenty to start. Leave auto top-up off."],
-      ["Create a key: ", link("https://openrouter.ai/settings/keys", "Settings → API keys"), " → Create API key. Name it Tattle and give it a credit limit, for example $10: the key stops at that amount, whatever happens."],
-      ["Paste it below. OpenRouter keys start with sk-or-."],
+      ["Sign in at ", link("https://console.typesafe.ai/keys", "console.typesafe.ai/keys"), " and create a key."],
+      ["Paste it below. It is not an OpenAI key: those start with sk-."],
     ],
-    placeholder: "sk-or-v1-…",
+    placeholder: "paste the key",
   },
 };
 
@@ -89,8 +86,8 @@ interface Field { name: KeyName; input: HTMLInputElement; msg: HTMLElement; chip
 /** The usual paste mistakes, caught as the key is typed (the server checks the same and more before saving). */
 function formatProblem(name: KeyName, key: string): string | null {
   if (/\s/.test(key)) return "A key has no spaces or line breaks: copy it again.";
-  if (name === "openai" && key.startsWith("sk-or-")) return "This is an OpenRouter key: paste it in the OpenRouter field.";
-  if (name === "openrouter" && key.startsWith("sk-") && !key.startsWith("sk-or-")) return "This looks like an OpenAI key: OpenRouter keys start with sk-or-.";
+  if (key.startsWith("sk-or-")) return "OpenRouter keys are not used. Paste an OpenAI key in the OpenAI field, or a TypeSafe key in the TypeSafe field.";
+  if (name === "typesafe" && key.startsWith("sk-")) return "This looks like an OpenAI key: paste it in the OpenAI field.";
   if (key.length < 20) return "This looks too short to be a whole key.";
   return null;
 }
@@ -250,7 +247,7 @@ export function showSetup(status: SetupStatus, t: TranscriptionStatus | null = n
         : "You chose OpenAI for transcription. OpenAI is paid directly, only for what you use. No key yet? Open the guide under the field."),
     h("section", { class: "setup-panel" }, cards, actions, trust()),
     h("p", { class: "note setup-privacy" },
-      "A transcript costs about $1.23 an hour, from prepaid credit. Fact-checking and labels add up to $0.40 an hour and need an OpenRouter key, which the app asks for when you turn them on. ",
+      "A transcript costs about $1.23 an hour, from prepaid credit. Fact-checking and labels add about $0.04 an hour and need a TypeSafe key, which the app asks for when you turn them on. ",
       `Keys are saved in ${status.path}, readable only by your macOS user. Change them later: ${desktop ? "Tattle → Settings… (⌘,)" : "cog menu → API keys"}.`)));
   document.body.append(root);
   fields[0]?.input.focus();
@@ -258,10 +255,10 @@ export function showSetup(status: SetupStatus, t: TranscriptionStatus | null = n
 
 // ---------- the API keys window ----------
 
-/** When each key is needed: neither is required to open the app, except OpenAI's when OpenAI transcribes. */
+/** When each key is needed: none is required to open the app, except OpenAI's when OpenAI transcribes. */
 const NEEDED: Record<KeyName, string> = {
-  openai: "Needed only for OpenAI transcription.",
-  openrouter: "Needed for fact-checking, labels, and Chat.",
+  openai: "Needed for transcription, Chat, label drafting, and fact-check research.",
+  typesafe: "Needed for fact-checking and labels.",
 };
 
 /** One card per key: the key in use, a field to replace it, and the guide folded away (open when `guide` says so). */
@@ -325,6 +322,56 @@ export function keyPrompt(name: KeyName, heading: string, done: { onSaved: () =>
   return el;
 }
 
+const MODEL_JOBS = [
+  ["chat", "Chat"],
+  ["labels", "Label drafting"],
+  ["s2", "Fact-check research"],
+] as const;
+
+/** Three selects in the API keys window. Other reveals a field for a model id the account list does not include. */
+async function modelChoicesBlock(): Promise<HTMLElement> {
+  const block = h("section", { class: "key-card" });
+  let choices: ModelChoiceView;
+  try { choices = await api.modelChoices(); }
+  catch { return h("p", { class: "note" }, "Model choices are not available."); }
+  if (!choices?.effective || !Array.isArray(choices.models)) return h("p", { class: "note" }, "Model choices are not available.");
+  const fields = MODEL_JOBS.map(([job, label]) => {
+    const current = choices.effective[job];
+    const known = choices.models.includes(current);
+    const sel = h("select", { class: "select", "aria-label": label },
+      ...choices.models.map((id) => h("option", { value: id, ...(id === current ? { selected: "selected" } : {}) }, id)),
+      h("option", { value: "", ...(!known ? { selected: "selected" } : {}) }, "Other…"));
+    const custom = h("input", {
+      class: "input", placeholder: "model id, such as gpt-5.4", "aria-label": `${label} model id`,
+      value: known ? "" : current, hidden: known,
+    });
+    sel.addEventListener("change", () => { custom.hidden = sel.value !== ""; if (!custom.hidden) custom.focus(); });
+    return { job, label, sel, custom };
+  });
+  const msg = h("p", { class: "key-msg", "aria-live": "polite" });
+  const save = h("button", { class: "btn", type: "button" }, "Save models");
+  save.addEventListener("click", () => void (async () => {
+    const body: { chat?: string; labels?: string; s2?: string } = {};
+    for (const f of fields) body[f.job] = f.sel.value || f.custom.value.trim();
+    save.disabled = true;
+    try {
+      await api.saveModels(body);
+      msg.className = "key-msg ok";
+      msg.textContent = "Model choices saved. The next call uses them.";
+    } catch (e) {
+      msg.className = "key-msg bad";
+      msg.textContent = e instanceof Error ? e.message : String(e);
+    } finally { save.disabled = false; }
+  })());
+  replace(block,
+    h("h2", {}, "Models"),
+    h("p", { class: "key-what" }, "Each job uses the OpenAI key. Pick a configured model, or Other to type an id from your account."),
+    ...fields.map((f) => h("label", { class: "fieldlabel" }, f.label, f.sel, f.custom)),
+    h("div", { class: "row end" }, save),
+    msg);
+  return block;
+}
+
 /** The API keys window (cog menu; Settings… in the Mac app): replaces a key; the next call uses it, without a restart. */
 export async function renderKeys(onSaved: (message: string) => void) {
   const box = $("#keys");
@@ -351,14 +398,15 @@ export async function renderKeys(onSaved: (message: string) => void) {
   };
   save.addEventListener("click", () => void submit());
   known = status;
-  const cards = (["openai", "openrouter"] as KeyName[]).map((n) => {
+  const cards = (["openai", "typesafe"] as KeyName[]).map((n) => {
     const c = keyCard(n, status.keys.find((k) => k.name === n), () => void submit());
     if (c.field) fields.push(c.field);
     return c.el;
   });
+  const models = await modelChoicesBlock();
   // keys set in .env cannot be changed here: nothing to save
-  replace(box, cards, h("div", { class: "row end key-actions", hidden: fields.length === 0 }, general, save),
-    h("p", { class: "note" }, `Neither key is needed to open the app. Saved keys are in ${status.path}, readable only by your macOS user.`));
+  replace(box, cards, models, h("div", { class: "row end key-actions", hidden: fields.length === 0 }, general, save),
+    h("p", { class: "note" }, `Saved keys are in ${status.path}, readable only by your macOS user. Model choices are saved with the other settings.`));
 }
 
 // ---------- the Transcription window ----------

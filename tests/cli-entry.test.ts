@@ -91,7 +91,7 @@ describe("npm run serve, as a child process with an isolated home and no keys", 
     for (let i = 0; i < 900 && !(out.includes("API key missing") && err.includes("--replay needs")); i++) await new Promise((r) => setTimeout(r, 100));
     expect(out).toContain("Tattle on http://127.0.0.1:0 (transcription: OpenAI)");
     expect(out).toContain("API key missing (openai): open the page above to add it");
-    expect(err).toContain("--replay needs openai and openrouter (fact-checking and labels run)");
+    expect(err).toContain("--replay needs openai and typesafe (fact-checking and labels run)");
     expect(child.exitCode).toBeNull(); // still serving
     child.kill("SIGTERM");
     expect(await exited).toBe(0);

@@ -29,10 +29,10 @@ export function isolatedFolders(opts: { keys?: boolean } = {}) {
   for (const d of ["web", "config", "models"]) symlinkSync(join(ROOT, d), join(cwd, d));
   const credentials = join(home, "credentials.json");
   if (opts.keys) {
-    writeFileSync(credentials, JSON.stringify({ OPENAI_API_KEY: "sk-proj-e2e-000000000000000000000000abcd", OPENROUTER_API_KEY: "sk-or-v1-e2e-00000000000000000000000000001234" }), { mode: 0o600 });
+    writeFileSync(credentials, JSON.stringify({ OPENAI_API_KEY: "sk-proj-e2e-000000000000000000000000abcd", OPENROUTER_API_KEY: "sk-or-v1-e2e-00000000000000000000000000001234", TYPESAFE_API_KEY: "ts-e2e-0000000000000000000000000000" }), { mode: 0o600 });
   }
   const env: Record<string, string> = {};
-  for (const [k, v] of Object.entries(process.env)) if (v !== undefined && !/^(OPENAI_API_KEY|OPENROUTER_API_KEY|NODE_OPTIONS|TATTLE_.*)$/.test(k)) env[k] = v;
+  for (const [k, v] of Object.entries(process.env)) if (v !== undefined && !/^(OPENAI_API_KEY|OPENROUTER_API_KEY|TYPESAFE_API_KEY|NODE_OPTIONS|TATTLE_.*)$/.test(k)) env[k] = v;
   Object.assign(env, {
     HOME: home, TMPDIR: join(tmp, "tmp"),
     TATTLE_CREDENTIALS: credentials, TATTLE_SETTINGS: join(home, "settings.json"), TATTLE_SIGNING_KEY: join(home, "signing-key.json"), TATTLE_LABEL_SETS: join(home, "labels"),

@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, test, vi } from "vitest";
 import { Budget, BudgetExhaustedError } from "../src/budget.ts";
 import { loadConfig } from "../src/config.ts";
 import {
-  backoffMs, classifyError, DECISIONS_URL, effectiveStatus, embeddedErrorCode, HttpError, JevClient, parseRetryAfter, requestHash,
+  backoffMs, classifyError, SYSTEMONE_URL, effectiveStatus, embeddedErrorCode, HttpError, JevClient, parseRetryAfter, requestHash,
   type JevCallRow, type JevPurpose,
 } from "../src/jev/client.ts";
 import type { QuestionSet } from "../src/jev/types.ts";
@@ -32,7 +32,7 @@ function setup(responses: Fake[], budgetOpts: Partial<ConstructorParameters<type
   const exhausted: string[] = [];
   const budget = new Budget({ onExhausted: (e) => exhausted.push(e.cap), ...budgetOpts });
   const f = (async (url: string, init: RequestInit) => {
-    expect(url).toBe(DECISIONS_URL);
+    expect(url).toBe(SYSTEMONE_URL);
     calls.push(init);
     const next = responses.shift();
     if (!next) throw new Error("no more fake responses");
@@ -53,9 +53,9 @@ describe("Jev client", () => {
     expect(r.model).toBe("typesafe/jev-1.13-20260917");
     const headers = calls[0].headers as Record<string, string>;
     expect(headers.Authorization).toBe("Bearer sk-or-test");
-    expect(headers["X-OpenRouter-Title"]).toBe("Tattle");
+    expect(headers["X-OpenRouter-Title"]).toBeUndefined();
     expect(JSON.parse(calls[0].body as string)).toEqual({
-      model: "typesafe/jev-1.13", state: { text: "hello" }, questions: QUESTIONS, provider: { data_collection: "deny" },
+      model: "jev-1.13.0", state: { text: "hello" }, questions: QUESTIONS,
     });
     expect(rows[0]).toMatchObject({
       kind: "jev_call", purpose: "utterance", utterance_id: "u_1", ok: true, attempts: 1, id: "gen-dec-1",
@@ -111,10 +111,14 @@ describe("Jev client", () => {
     expect(calls.length).toBe(2);
   });
 
-  test("a response without usage.cost is rejected, not retried", async () => {
-    const { client, calls } = setup([res(200, { ...OK_BODY, usage: { input_tokens: 1, output_tokens: 1 } }), res(200, OK_BODY)]);
-    await expect(client.ask({}, QUESTIONS, { purpose: "relabel" })).rejects.toThrow(/usage.cost/);
-    expect(calls.length).toBe(1);
+  test("a response without usage is rejected; input tokens without cost are priced", async () => {
+    const missing = setup([res(200, { ...OK_BODY, usage: undefined })]);
+    await expect(missing.client.ask({}, QUESTIONS, { purpose: "relabel" })).rejects.toThrow(/usage/);
+    expect(missing.calls.length).toBe(1);
+    const priced = setup([res(200, { ...OK_BODY, usage: { input_tokens: 1_000_000_000, output_tokens: 1 } })]);
+    const r = await priced.client.ask({}, QUESTIONS, { purpose: "relabel" });
+    expect(r.usage.cost).toBeCloseTo(42);
+    expect(priced.calls.length).toBe(1);
   });
 
   test("retry-after in seconds and as an HTTP date", async () => {
@@ -136,7 +140,7 @@ describe("Jev client", () => {
   test("error classification", () => {
     expect(classifyError(new HttpError(null, "net"))).toBe("retry");
     expect(classifyError(new HttpError(524, ""))).toBe("retry");
-    expect(classifyError(new HttpError(402, JSON.stringify({ error: { metadata: { limit_source: "openrouter_in_flight_budget" } } })))).toBe("retry");
+    expect(classifyError(new HttpError(402, JSON.stringify({ error: { metadata: { limit_source: "openrouter_in_flight_budget" } } })))).toBe("fail");
     expect(classifyError(new HttpError(402, JSON.stringify({ error: { message: "no credits" } })))).toBe("fail");
     expect(classifyError(new HttpError(200, JSON.stringify({ error: { code: 400 } })))).toBe("fail");
     for (const s of [401, 403, 404, 413, -1]) expect(classifyError(new HttpError(s, ""))).toBe("fail");
@@ -149,7 +153,7 @@ describe("Jev client", () => {
     expect(budget.isExhausted).toBe(true);
   });
 
-  test("once OpenRouter said the credit is used up, later calls never reach the network", async () => {
+  test("once a provider said the credit is used up, later calls never reach the network", async () => {
     const { client, calls, budget } = setup([res(402, { error: { code: 402, message: "no credits" } }), res(200, OK_BODY)]);
     await expect(client.ask({}, QUESTIONS, { purpose: "relabel" })).rejects.toBeInstanceOf(BudgetExhaustedError);
     const sent = calls.length;
@@ -229,26 +233,14 @@ describe("Jev client: backoff and the shared pause", () => {
     expect(calls.length).toBe(3);
   });
 
-  it("a transient 402 on a live purpose fails at once without exhausting the budget, and sets the pause", async () => {
+  it("a 402 fails at once and exhausts the budget, even with an OpenRouter-shaped body", async () => {
     frozen();
-    const { client, calls, budget, rows } = rig([transient402, res(200, OK_BODY)]);
-    const err = await client.ask({}, QUESTIONS, { purpose: "utterance" }).catch((e) => e);
-    expect(err).toBeInstanceOf(HttpError);
-    expect(err.status).toBe(402);
+    const { client, calls, budget } = rig([transient402, res(200, OK_BODY)]);
+    await expect(client.ask({}, QUESTIONS, { purpose: "utterance" })).rejects.toBeInstanceOf(BudgetExhaustedError);
     expect(calls.length).toBe(1);
-    expect(budget.isExhausted).toBe(false);
-    expect(client.pausedUntil).toBe(T0 + 2000);
-    expect(rows[0]).toMatchObject({ ok: false, attempts: 1 });
-  });
-
-  it("a transient 402 on a background purpose is retried after the pause", async () => {
-    frozen();
-    const { client, calls, sleeps, budget, rows } = rig([transient402, res(200, OK_BODY)]);
-    await client.ask({}, QUESTIONS, { purpose: "gate" });
-    expect(calls.length).toBe(2);
-    expect(sleeps).toEqual([2000]);
-    expect(budget.isExhausted).toBe(false);
-    expect(rows[0]).toMatchObject({ ok: true, attempts: 2 });
+    expect(budget.isExhausted).toBe(true);
+    await expect(client.ask({}, QUESTIONS, { purpose: "gate" })).rejects.toBeInstanceOf(BudgetExhaustedError);
+    expect(calls.length).toBe(1);
   });
 
   it("the pause only moves forward: a shorter backoff never shortens it", async () => {
@@ -279,12 +271,12 @@ describe("Jev client: backoff and the shared pause", () => {
 describe("Jev client: error classes and responses", () => {
   afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
 
-  it("401 is rethrown as HttpError status 401 with a message naming OPENROUTER_API_KEY, never retried", async () => {
+  it("401 is rethrown as HttpError status 401 with a message naming TYPESAFE_API_KEY, never retried", async () => {
     const { client, calls, rows } = rig([res(401, { error: { code: 401, message: "No auth credentials found" } }), res(200, OK_BODY)]);
     const err = await client.ask({}, QUESTIONS, { purpose: "relabel" }).catch((e) => e);
     expect(err).toBeInstanceOf(HttpError);
     expect(err.status).toBe(401);
-    expect(err.message).toBe("OpenRouter rejected the API key (401): check OPENROUTER_API_KEY");
+    expect(err.message).toBe("TypeSafe rejected the API key (401): check TYPESAFE_API_KEY");
     expect(err.body).toContain("No auth credentials found");
     expect(calls.length).toBe(1);
     expect(rows[0].error).toMatch(/^HTTP 401 /); // the row keeps the service's own words
@@ -354,10 +346,10 @@ describe("Jev client: error classes and responses", () => {
     expect(rows[0]).toMatchObject({ id: null, provider_returned: null, answers: {} });
   });
 
-  it("the request omits provider when the config has none", async () => {
-    const { client, calls } = rig([res(200, OK_BODY)], { jev: { provider: undefined } });
+  it("the request has model, state, and questions, and no provider", async () => {
+    const { client, calls } = rig([res(200, OK_BODY)]);
     await client.ask({ x: 1 }, QUESTIONS, { purpose: "utterance" });
-    expect(JSON.parse(calls[0].body as string)).toEqual({ model: "typesafe/jev-1.13", state: { x: 1 }, questions: QUESTIONS });
+    expect(JSON.parse(calls[0].body as string)).toEqual({ model: "jev-1.13.0", state: { x: 1 }, questions: QUESTIONS });
     expect(calls[0].method).toBe("POST");
     expect((calls[0].headers as Record<string, string>)["Content-Type"]).toBe("application/json");
   });
@@ -426,7 +418,7 @@ describe("Jev client: budget, onStart and the call log", () => {
     expect(rows[0]).not.toHaveProperty("segment_id");
     expect(rows[0]).not.toHaveProperty("error");
     expect(rows[0].question_set_version).toBeNull();
-    expect(rows[0].request_hash).toBe(requestHash("typesafe/jev-1.13", { a: 1 }, QUESTIONS));
+    expect(rows[0].request_hash).toBe(requestHash("jev-1.13.0", { a: 1 }, QUESTIONS));
     expect(rows[0].usage).toEqual({ input_tokens: 476, output_tokens: 70, cost: 0.00002 });
     expect(Date.parse(rows[0].at)).not.toBeNaN();
     expect(rows[0].latency_ms).toBeGreaterThanOrEqual(0);

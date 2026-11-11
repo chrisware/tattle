@@ -1,6 +1,6 @@
 ---
-description: The chat window — questions about the transcript of the session on screen, live or recorded, to any curated OpenRouter model — how a live chat keeps up with the transcript, storage, cost, the API, and the page.
-tags: [chat, openrouter, llm, transcript, cost, api, web]
+description: The chat window — questions about the transcript of the session on screen, live or recorded, to a configured OpenAI model — how a live chat keeps up with the transcript, storage, cost, the API, and the page.
+tags: [chat, openai, llm, transcript, cost, api, web]
 source:
   - src/chat/**
   - web/src/chat.ts
@@ -9,7 +9,7 @@ source:
 
 # Chat
 
-The **Chat** window lets the host ask any of a curated list of models about the transcript of the session on screen: the show on air, or a recording opened from the library. It works like ChatGPT or Claude, but the transcript is its only attachment (no files or images). It opens from the header's Chat button or ⌘K / Ctrl+K, as a large window over the page.
+The **Chat** window lets the host ask a configured OpenAI model about the transcript of the session on screen: the show on air, or a recording opened from the library. It works like ChatGPT, but the transcript is its only attachment (no files or images). It opens from the header's Chat button or ⌘K / Ctrl+K, as a large window over the page.
 
 The chat is a tool for the host, separate from the demonstration. It is not part of System 1 or System 2, and never makes the judgments Jev makes (see [Mission](mission.md)).
 
@@ -45,22 +45,13 @@ Nothing is created, sent, or spent until the first question of a new chat. Openi
 | Key | Value | Meaning |
 | --- | --- | --- |
 | `defaultModel` | `openai/gpt-6-luna` | A new chat's model |
-| `models` | 14 ids | The curated list the picker shows: GPT-6 Luna, Sol, Astra; Claude Sonnet 5, Opus 5.5, Fable 5.1; Gemini 3.8 Flash; Grok 4.7; DeepSeek V4.1 Flash; Kimi K3; Qwen3.8 Max Prime; GLM 5.3; Muse Spark 1.3; Mistral Large 2512 |
-| `provider` | `{ data_collection: "deny" }` | Sent on every chat call, like Jev and System 2 |
-| `effort` | `low` | `reasoning.effort`, so replies start quickly; models without reasoning ignore it |
+| `models` | 14 ids, of which the picker offers the `openai/` ones | Plus any id saved from the API keys window. The other vendors stay in the file and are not offered |
+| `effort` | `low` | `reasoning_effort` on a direct OpenAI call, so replies start quickly |
 | `timeoutMs`, `maxAttempts` | `120000`, `2` | A failure before the first word is retried once; a reply already streaming is never retried |
 
-Each model's facts come from OpenRouter's catalogue (`GET https://openrouter.ai/api/v1/models`), read by the engine and kept for an hour (a failed read is retried after a minute). The page asks for them only when Chat opens with the OpenRouter key set, or when its model picker opens: before 1.0.1 it asked at every launch, so even a transcript-only show on Apple Speech reached openrouter.ai once. Offline, the list shows without its facts:
+The configured models are the `openai/` entries in `config/app.json`, plus any id saved from the Models section of the API keys window. Prices and context windows are not fetched: the picker shows the id, and a missing `usage.cost` is recorded as zero.
 
-- the context window (`context_length`);
-- the input, output, and cached-input price per million tokens (`pricing.*` × 10⁶);
-- whether it is still listed (`available: false` greys it out).
-
-The base price is shown. Some models charge more above a prompt size (OpenRouter's `pricing.overrides`), and the recorded cost is always OpenRouter's actual figure.
-
-The model can be changed at any time. The next question sends the whole conversation to the new model, without its cache.
-
-Tested on 26 September 2026: GPT-6 Luna and Claude Sonnet 5 both route with `data_collection: deny`. If no provider of a model accepts it, OpenRouter answers 404 and the chat says so ("No provider of … accepts this project's privacy setting").
+The model can be changed at any time. The next question sends the whole conversation to the new model.
 
 ## Storage — `chats.jsonl`
 
@@ -80,12 +71,12 @@ Chats can be made on a recording opened from the library. This is the second exc
 
 ## Cost
 
-- **Every reply's cost** comes from the stream's final `usage` (`usage: { include: true }`).
-- **A stopped reply** has no final usage, so the engine asks OpenRouter's generation record (`GET /api/v1/generation?id=`, up to 3 tries 1–3 s apart). Only if that fails is the cost estimated from the price list (about 4 characters per token), marked `estimated` and shown with a `*`.
+- **Every reply's cost** comes from the stream's final `usage` when OpenAI sends `usage.cost`. When that field is absent the cost is recorded as zero, and the header shows an estimate from token counts.
+- **A stopped reply** has no final usage. Its cost is estimated from the tokens already received, marked `estimated` and shown with a `*`.
 - **The session's ledger:** during a session, chat spend goes into the budget's fourth bucket, `chat` (`src/budget.ts`). The header's spend and its hover breakdown include it (Transcription, Jev, System 2, Chat).
-- **No spending cap** (removed on 29 September 2026): the recording's chat spend is shown, summed over its `chat_call` rows, deleted chats included, and the OpenRouter key's own credit limit is the only one.
+- **No spending cap** (removed on 29 September 2026): the recording's chat spend is shown, summed over its `chat_call` rows, deleted chats included. The OpenAI account's own limit is the only one.
 - **A recording's cost** includes its chats (`SessionSummary.cost.chat`), so the header shows "what it cost when it ran, plus any chats about it". A chat on an opened recording emits a transient `cost` event with the recording's new totals.
-- **A 402 from OpenRouter** marks a running session's budget exhausted, as for any other call.
+- **A 402 from OpenAI** marks a running session's budget exhausted, as for any other call.
 
 ## API
 
@@ -120,7 +111,7 @@ The **meter** (`GET /api/chats/:id`):
 - Its tooltip names the shortcut, ⌘K / Ctrl+K, which opens the chat from anywhere.
 - A pulsing dot on it means a reply is being written.
 
-**Without an OpenRouter key** the window shows "Please provide your OpenRouter API key to use Chat." with the key's card in place of the chat (`#chat-key`, inside the dialog); saving the key opens the chat. The chat's POST routes answer 400 `needsKey: "openrouter"` without the key, before calling OpenRouter (see [Setup](setup.md#asking-for-a-key-where-it-is-needed)).
+**Without an OpenAI key** the window shows "Please provide your OpenAI API key to use Chat." with the key's card in place of the chat (`#chat-key`, inside the dialog); saving the key opens the chat. The chat's POST routes answer 400 `needsKey: "openai"` without the key, before calling OpenAI (see [Setup](setup.md#asking-for-a-key-where-it-is-needed)).
 
 **The window** (`dlg-chat`, up to 1240 × 1000 px, 92 % of the window's height). Its header names what the chat is about ("About Episode 12 · on air"). A cited time plays a recording from there with the chat left open; on air, it closes the chat and scrolls the transcript to that line.
 
@@ -138,14 +129,10 @@ The **meter** (`GET /api/chats/:id`):
 - **Composer:**
   - The question box grows up to 200 px. Enter sends, Shift+Enter adds a line, and Esc stops a reply.
   - Send becomes Stop while a reply is written.
-- **Model picker:** shows the current model with its context window and price per million tokens. It opens a panel with:
-  - **Search** by name, vendor, or id. ↑ and ↓ move through the results, Enter picks, and Esc closes.
-  - **Sort:**
-    - Suggested: the order of `chat.models`.
-    - Cheapest and Priciest: by input price, then output, because a transcript chat is mostly input (each question re-sends the conversation).
-    - Largest context.
-    - The choice is remembered in the browser.
-  - A table of every model: context, input price, and output price. A model OpenRouter no longer lists is greyed out.
+- **Model picker:** shows the current model. It opens a panel with:
+  - **Search** by name or id. ↑ and ↓ move through the results, Enter picks, and Esc closes.
+  - The configured OpenAI models, plus any id saved from the API keys window, and an Other field for a model id on the account.
+  - Prices and context windows are not shown: OpenAI's catalogue is not fetched.
 - The messages and the composer are centred in a column at most about 820 px wide, for reading.
 - **URL:** `?panel=chat&chat=chat_2` (see [Architecture](architecture.md)).
 

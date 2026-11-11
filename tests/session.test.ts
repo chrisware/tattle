@@ -10,21 +10,23 @@ import { EventBus, redactor } from "../src/store/events.ts";
 import { JSONL_FILES } from "../src/store/sessionStore.ts";
 import { Engine } from "../src/server/main.ts";
 import { FIXTURE_DIR, loadScript, requireAssets } from "./helpers.ts";
-import { fakeServicesFetch as fakeFetch, TEST_OPENAI_KEY as OPENAI, TEST_OPENROUTER_KEY as OPENROUTER } from "./fakes/index.ts";
+import { fakeServicesFetch as fakeFetch, TEST_OPENAI_KEY as OPENAI, TEST_OPENROUTER_KEY as ECHOED } from "./fakes/index.ts";
 
+const TYPESAFE = "ts-test-key-000000000000000000";
 describe("session (offline, fake services)", () => {
   test("runs the fixture end to end; no event or session file contains either API key", async () => {
     requireAssets();
     const script = loadScript();
     const root = mkdtempSync(join(tmpdir(), "sessions-"));
-    const prev = { or: process.env.OPENROUTER_API_KEY, oa: process.env.OPENAI_API_KEY };
-    process.env.OPENROUTER_API_KEY = OPENROUTER;
+    const prev = { ts: process.env.TYPESAFE_API_KEY, oa: process.env.OPENAI_API_KEY, or: process.env.OPENROUTER_API_KEY };
+    delete process.env.OPENROUTER_API_KEY;
+    process.env.TYPESAFE_API_KEY = TYPESAFE;
     process.env.OPENAI_API_KEY = OPENAI;
     try {
-      const bus = new EventBus({ redact: redactor([OPENROUTER, OPENAI]) });
+      const bus = new EventBus({ redact: redactor([ECHOED, OPENAI, TYPESAFE]) });
       const { f } = fakeFetch(script);
       const s = new Session({
-        mode: "replay", config: loadConfig(), bus, sessionsDir: root, fetch: f, keys: { openrouter: OPENROUTER, openai: OPENAI },
+        mode: "replay", config: loadConfig(), bus, sessionsDir: root, fetch: f, keys: { openai: OPENAI, typesafe: TYPESAFE },
         sources: [new FileSource(`${FIXTURE_DIR}/host.wav`, "host", "max"), new FileSource(`${FIXTURE_DIR}/remote.wav`, "remote", "max")],
       });
       const live: any[] = [];
@@ -88,17 +90,19 @@ describe("session (offline, fake services)", () => {
       expect(bus.history().some((e) => JSON.stringify(e).includes("[redacted]"))).toBe(true);
       for (const file of readdirSync(dir)) {
         const text = readFileSync(join(dir, file)).toString("latin1");
-        expect(text.includes(OPENROUTER), file).toBe(false);
+        expect(text.includes(ECHOED), file).toBe(false);
         expect(text.includes(OPENAI), file).toBe(false);
+        expect(text.includes(TYPESAFE), file).toBe(false);
       }
       for (const e of bus.history()) {
         const t = JSON.stringify(e);
-        expect(t.includes(OPENROUTER) || t.includes(OPENAI)).toBe(false);
+        expect(t.includes(ECHOED) || t.includes(OPENAI) || t.includes(TYPESAFE)).toBe(false);
       }
       const state = s.state() as any;
       expect(state.segments.length).toBe(seg.length);
     } finally {
-      process.env.OPENROUTER_API_KEY = prev.or;
+      if (prev.or === undefined) delete process.env.OPENROUTER_API_KEY; else process.env.OPENROUTER_API_KEY = prev.or;
+      if (prev.ts === undefined) delete process.env.TYPESAFE_API_KEY; else process.env.TYPESAFE_API_KEY = prev.ts;
       process.env.OPENAI_API_KEY = prev.oa;
     }
   });
@@ -111,7 +115,7 @@ describe("session (offline, fake services)", () => {
     const spy = ((url: string, init: RequestInit) => { urls.push(url); return f(url, init); }) as unknown as typeof fetch;
     const bus = new EventBus();
     const s = new Session({
-      mode: "replay", config: loadConfig(), bus, sessionsDir: root, fetch: spy, keys: { openrouter: OPENROUTER, openai: OPENAI },
+      mode: "replay", config: loadConfig(), bus, sessionsDir: root, fetch: spy, keys: { openai: OPENAI, typesafe: TYPESAFE },
       sources: [new FileSource(`${FIXTURE_DIR}/host.wav`, "host", "max"), new FileSource(`${FIXTURE_DIR}/remote.wav`, "remote", "max")],
       features: { factcheck: false, labels: false },
     });
@@ -143,7 +147,7 @@ describe("session (offline, fake services)", () => {
       categories: [config.labels.categories[1]], scores: [], markers: [config.labels.markers[0]],
     };
     const s = new Session({
-      mode: "replay", config, bus, sessionsDir: root, fetch: f, keys: { openrouter: OPENROUTER, openai: OPENAI },
+      mode: "replay", config, bus, sessionsDir: root, fetch: f, keys: { openai: OPENAI, typesafe: TYPESAFE },
       sources: [new FileSource(`${FIXTURE_DIR}/host.wav`, "host", "max"), new FileSource(`${FIXTURE_DIR}/remote.wav`, "remote", "max")],
       features: { factcheck: false }, labelSet, stories: ["Jev's launch", " "],
     });
@@ -169,7 +173,7 @@ describe("session (offline, fake services)", () => {
     const { f, stats } = fakeFetch(loadScript());
     const bus = new EventBus();
     const s = new Session({
-      mode: "replay", config: loadConfig(), bus, sessionsDir: root, fetch: f, keys: { openrouter: OPENROUTER, openai: OPENAI },
+      mode: "replay", config: loadConfig(), bus, sessionsDir: root, fetch: f, keys: { openai: OPENAI, typesafe: TYPESAFE },
       sources: [new FileSource(`${FIXTURE_DIR}/host.wav`, "host", "max"), new FileSource(`${FIXTURE_DIR}/remote.wav`, "remote", "max")],
     });
     expect(s.pause()).toBe(true);
@@ -189,7 +193,7 @@ describe("session (offline, fake services)", () => {
     requireAssets();
     const root = mkdtempSync(join(tmpdir(), "sessions-"));
     const { f } = fakeFetch(loadScript());
-    const engine = new Engine({ sessionsDir: root, session: { fetch: f, keys: { openrouter: OPENROUTER, openai: OPENAI } } });
+    const engine = new Engine({ sessionsDir: root, session: { fetch: f, keys: { openai: OPENAI, typesafe: TYPESAFE } } });
     await expect(engine.start({ mode: "replay", dir: FIXTURE_DIR, speed: "max", features: { labels: "no" as any } })).rejects.toThrow(/features.labels/);
     const { sessionId } = await engine.start({ mode: "replay", dir: FIXTURE_DIR, speed: "max", name: "Pilot", features: { factcheck: false, labels: false } });
     // naming used to fail here, before the session had written session.json
@@ -205,7 +209,7 @@ describe("session (offline, fake services)", () => {
     requireAssets();
     const root = mkdtempSync(join(tmpdir(), "sessions-"));
     const { f } = fakeFetch(loadScript());
-    const engine = new Engine({ sessionsDir: root, session: { fetch: f, keys: { openrouter: OPENROUTER, openai: OPENAI } } });
+    const engine = new Engine({ sessionsDir: root, session: { fetch: f, keys: { openai: OPENAI, typesafe: TYPESAFE } } });
     const { sessionId } = await engine.start({ mode: "replay", dir: FIXTURE_DIR, speed: "max" });
     expect(() => engine.pause()).toThrow(/only a live session/);
     await engine.current!.run();

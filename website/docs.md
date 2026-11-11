@@ -2,7 +2,7 @@
 
 > Tattle listens to your calls. It **transcribes** them as people speak, **maps** the conversation on a timeline, and **fact-checks** claims as they're said. This page covers everything it does, from the first launch to the last export.
 
-Last updated 28 Oct 2026 · Tattle for Mac is not affiliated with Tattle Civic Tech (tattle.co.in) or other apps named Tattle.
+Last updated 11 Nov 2026 · Tattle for Mac is not affiliated with Tattle Civic Tech (tattle.co.in) or other apps named Tattle.
 
 The web page: https://hey-tattle.com/docs
 
@@ -17,7 +17,7 @@ Tattle is a Mac app. It hears two sides of a conversation: your microphone, and 
 | A Mac with Apple Silicon | M1 or later. Intel Macs are not supported. |
 | macOS 14.2 or later | macOS 26 or later transcribes on the Mac itself, for free. macOS 14.2 to 25 transcribes with OpenAI. |
 | Earbuds or headphones | Recommended: they keep the call out of your microphone. See [speaker mode](https://hey-tattle.com/docs#speaker-mode). |
-| Accounts | None for transcripts on macOS 26+. An OpenRouter key for fact-checking, labels, and Chat. An OpenAI key on older macOS. See [Keys and accounts](https://hey-tattle.com/docs#keys). |
+| Accounts | None for transcripts on macOS 26+. A TypeSafe key for fact-checking and labels. An OpenAI key for Chat, fact-check research, Create with AI, and transcription on older macOS. See [Keys and accounts](https://hey-tattle.com/docs#keys). |
 
 1. **Download** the DMG from the button above (or [GitHub Releases](https://github.com/nicolasdao/tattle/releases/latest)) and drag **Tattle** into Applications.
 2. **Open it** and click **Allow** for Microphone and System Audio Recording.
@@ -75,8 +75,8 @@ Tattle has no account and no server of its own. Paid features use your own keys 
 | Key | What needs it | Where to get it |
 | --- | --- | --- |
 | None | Transcripts on macOS 26 or later (Apple Speech), speakers, the timeline's segments, recordings, playback, export and import | — |
-| OpenAI | Transcription on macOS 14.2 to 25, or when you pick the OpenAI engine | [platform.openai.com](https://platform.openai.com), with prepaid credit. Keys start with `sk-` |
-| OpenRouter | Fact-checking, labels, Chat, Create with AI, and Try on a recording | [openrouter.ai](https://openrouter.ai), with prepaid credit. Keys start with `sk-or-` |
+| OpenAI | Chat, Create with AI, fact-check research, and transcription on macOS 14.2 to 25 or when you pick the OpenAI engine | [platform.openai.com](https://platform.openai.com), with prepaid credit. Keys start with `sk-` |
+| TypeSafe | Fact-checking (Jev) and labels, including Try on a recording | [console.typesafe.ai/keys](https://console.typesafe.ai/keys) |
 
 ### The OpenAI key on first launch
 
@@ -88,25 +88,26 @@ The setup screen, **Add your OpenAI API key to start**, appears only when OpenAI
 
 A transcript costs about $1.23 an hour of show. After saving: **All set. Opening Tattle…**
 
-### The OpenRouter key, when you first need it
+### The TypeSafe and OpenAI keys, when you first need them
 
-Nothing asks for OpenRouter until you turn on a feature that needs it. A card then appears in place, with the guide open, a **Save** button and sometimes **Not now**:
+Nothing asks for a key until you turn on a feature that needs it. A card then appears in place, with the guide open, a **Save** button and sometimes **Not now**:
 
-- In **Start live**, turning on Fact-check or picking a label set: "Please provide your OpenRouter API key to configure fact-checking or labeling." **Not now** turns both off.
-- Opening Chat: "Please provide your OpenRouter API key to use Chat."
-- Labels → Try on a recording, and Labels → Create with AI.
+- In **Start live**, turning on Fact-check or picking a label set: "Please provide your TypeSafe API key to configure fact-checking or labeling." **Not now** turns both off. Starting with Fact-check on also asks for the OpenAI key: "Please provide your OpenAI API key. Fact-checking research uses it. Jev uses TypeSafe." **Not now** turns fact-checking off and leaves labels on.
+- Opening Chat: "Please provide your OpenAI API key to use Chat."
+- Labels → Try on a recording: "Please provide your TypeSafe API key to try a label set on a recording."
+- Labels → Create with AI: "Please provide your OpenAI API key to create labels with AI."
 
-The guide: sign up at openrouter.ai, Settings → Credits ($10, auto top-up off), Settings → API keys, name it Tattle, and **give it a credit limit** such as $10. The app sets no spending limit of its own: the key's limit is the one that stops a mistake.
+TypeSafe: sign in at [console.typesafe.ai/keys](https://console.typesafe.ai/keys) and create a key. OpenAI: the same account as transcription ([platform.openai.com](https://platform.openai.com), prepaid credit, automatic recharge off). The app sets no spending limit of its own. TypeSafe bills Jev by the token; the OpenAI key's own limit caps Chat, label drafting, and fact-check research.
 
 ### How a key is checked
 
-Before saving, Tattle makes a free request to the service with the key (10 s at most). It refuses a key that is empty, has spaces or line breaks, looks cut short, belongs to the other service, or that the service rejects ("OpenAI does not accept this key. Check it was copied whole, and not revoked."). It saves the key with a warning when:
+Before saving, Tattle makes a free request to the service with the key (10 s at most). It refuses a key that is empty, has spaces or line breaks, looks cut short, belongs to the other service, or that the service rejects ("OpenAI does not accept this key. Check it was copied whole, and not revoked.", or the same for TypeSafe). It saves the key with a warning when:
 
 - it cannot reach the service ("Could not reach the service to check it (are you online?). It was saved anyway.");
-- an OpenRouter account has no credit yet, or the key has no credit limit;
+- the service answers with another HTTP error ("The service answered HTTP … when checking it. It was saved anyway.");
 - an OpenAI key cannot use the transcription models (check the project's model permissions).
 
-A working key shows **✓ Key works**, and for OpenRouter the limit and what is left. An OpenAI account with no credit cannot be detected in advance: it fails on the first transcription (see [Troubleshooting](https://hey-tattle.com/docs#troubleshooting)).
+A working key shows **✓ Key works**. A key with no credit cannot be detected in advance: it fails on the first call that needs it (see [Troubleshooting](https://hey-tattle.com/docs#troubleshooting)).
 
 ### Change or remove a key
 
@@ -148,8 +149,8 @@ Press **Start live** in the header. The window, **Choose what runs during this s
 | Microphone | Your mic. **Built-in microphone**, then every other input with its connection (USB, Bluetooth…). Plugged in after launch? It is listed next time the window opens. The last one used is preselected. |
 | People on the call | **Any number**, or **1 on the call** to **4 on the call**. Voices beyond this count go to the closest speaker instead of becoming new ones. It resets to Any number each time. Your mic always counts one voice. |
 | Transcript | **Always on**: both streams recorded and transcribed live, speakers identified, a timeline, and chat. |
-| Fact-check | System 1 (Jev) flags checkable claims on every line; System 2 (GPT-6 Luna) researches them with sources. On by default when your OpenRouter key is set. |
-| Labels | A label set, or **Off**. Jev labels each part of the timeline with its questions. Defaults to the set you used last, or the built-in **AI podcast**; Off without an OpenRouter key. |
+| Fact-check | System 1 (Jev) flags checkable claims on every line; System 2 (GPT-6 Luna) researches them with sources. On by default when your TypeSafe key is set. Research also needs the OpenAI key, and Start live asks for it. |
+| Labels | A label set, or **Off**. Jev labels each part of the timeline with its questions. Defaults to the set you used last, or the built-in **AI podcast**; Off without a TypeSafe key. |
 | Tonight's stories (optional) | Shown when a label set is picked: one headline per line (254 at most, 300 characters each). Jev says which story each part of the show is about, and the headlines help OpenAI spell names. |
 
 A summary line says what runs and what it costs: **Everything on · labels: AI podcast**, **No fact-checking**, **No labels**, or **Transcript only: Jev and System 2 are not called**, then **Free: nothing leaves this Mac.** or **About $X an hour** (with "at most" when fact-checking is on). With Fact-check off and Labels off, the session is **transcript only**.
@@ -183,7 +184,7 @@ https://hey-tattle.com/docs#header
 | Clock | Time since the session started (paused time included). |
 | Meters | **Host** (your mic, light blue) and **Remote** (the call, pink): the device, a level bar from −60 to 0 dBFS, and the level and delay, or **waiting…**, **paused**, **muted · call playing**, **silent N s**. A meter turns **red** when its stream stays at or below −50 dBFS for more than 10 s, or sends nothing for more than 3 s. |
 | Speakers chip | Speaker mode is on (see [Speaker mode](https://hey-tattle.com/docs#speaker-mode)). Hover it for the details. |
-| Spend / Cost | **Spend $X** on air, **Cost $X** for a recording. Hover or focus it for the split: Transcription, Jev, System 2, Chat. It turns red with **OpenRouter stopped** if OpenRouter refuses for good (out of credit or over the key's limit). |
+| Spend / Cost | **Spend $X** on air, **Cost $X** for a recording. Hover or focus it for the split: Transcription, Jev, System 2, Chat. It turns red when a provider refuses for good (out of credit or over the key's limit). The hover shows that provider's message. |
 | Buttons | **Start live**, **Pause** / **Resume**, **Stop**, **Export** (on a recording), **Import** (when nothing is on air), **Chat** (a dot pulses while a reply is being written), and the cog. |
 
 ### The cog menu
@@ -268,7 +269,7 @@ How segments close: when Jev says the topic changed (and the segment is at least
 
 https://hey-tattle.com/docs#fact-checking
 
-Needs: OpenRouter key · Up to about $0.35 an hour
+Needs: OpenAI and TypeSafe keys · Up to about $0.35 an hour
 
 Fact-checking works in two steps, like fast and slow thinking. **System 1** is Jev, a fast decision model from TypeSafe AI: on every line it answers a few typed questions (is it a checkable claim, about the public world, worth checking, is the speaker unsure) in under a second. **System 2** is GPT-6 Luna with web search: it researches only the claims System 1 flags, and returns a verdict with sources within seconds.
 
@@ -332,7 +333,7 @@ Cog → **Insights**, updated every minute and at the end of the show. Three tab
 
 https://hey-tattle.com/docs#label-sets
 
-Needs: Making one: free · Using one: OpenRouter key
+Needs: Making one: free · Using one: TypeSafe key
 
 A label set is what the timeline asks Jev about each segment of a show. Pick one in **Start live**. Sets are files on your Mac: making or editing one sends nothing anywhere.
 
@@ -356,13 +357,13 @@ The editor has a card per category, score, and marker (**Add category (n of 2)**
 
 ### Create with AI
 
-Needs: OpenRouter key · A few cents
+Needs: OpenAI key · A few cents
 
 GPT-6 Luna drafts a set with you, one question at a time, while the editor on the right fills in. It starts by asking what kind of conversation you will label (**A podcast about a topic**, **A sales or customer call**, **A team meeting**, **A job interview**, or your own words), proposes options, levels, wording, thresholds, and icons, and explains anything you ask about. Click a suggested answer or type your own; your edits in the editor win. A checklist tracks what the set still needs (**Still to settle: N**, then **Ready: try it on a recording, then save**). The cost so far shows as **Spent $X**. Nothing is saved until you press **Save**; closing the window discards the conversation.
 
 ### Try on a recording
 
-Needs: OpenRouter key · Shown before you start
+Needs: TypeSafe key · Shown before you start
 
 From the editor or Create with AI: pick a recording, and Jev is asked the draft's questions about each segment that starts in its first 10 minutes (40 at most). The result shows two small timelines, the recording's own labels and the draft's, with the cost. Nothing is saved into the recording. Not available while a session is on air.
 
@@ -378,7 +379,7 @@ When a show starts, the whole set is copied into the recording, with tonight's s
 
 https://hey-tattle.com/docs#chat
 
-Needs: OpenRouter key · About $0.004 a question with GPT-6 Luna on a 2-hour show
+Needs: OpenAI key · Priced from token counts
 
 Ask questions about the transcript of the show on screen, live or afterwards. Open it with **Chat** in the header or `⌘K` from anywhere.
 
@@ -392,26 +393,15 @@ Ask questions about the transcript of the show on screen, live or afterwards. Op
 
 ### Models
 
-Click the model button to pick one. Search by name, and sort by **Suggested**, **Cheapest**, **Priciest**, or **Largest context**; the list shows each model's context and prices per million tokens, from OpenRouter. Switching mid-chat sends the whole conversation to the new model with the next question.
+Click the model button to pick one. Search by name, and sort by **Suggested**, **Cheapest**, **Priciest**, or **Largest context**. OpenAI's list does not return prices or context length, so those show as unknown; switching mid-chat sends the whole conversation to the new model with the next question.
 
-| Model | OpenRouter id |
+| Model | Id |
 | --- | --- |
 | GPT-6 Luna (default) | `openai/gpt-6-luna` |
 | GPT-6 Sol | `openai/gpt-6-sol` |
 | GPT-6 Astra | `openai/gpt-6-astra` |
-| Claude Sonnet 5 | `anthropic/claude-sonnet-5` |
-| Claude Opus 5.5 | `anthropic/claude-opus-5.5` |
-| Claude Fable 5.1 | `anthropic/claude-fable-5.1` |
-| Gemini 3.8 Flash | `google/gemini-3.8-flash` |
-| Grok 4.7 | `x-ai/grok-4.7` |
-| DeepSeek V4.1 Flash | `deepseek/deepseek-v4.1-flash` |
-| Kimi K3 | `moonshotai/kimi-k3` |
-| Qwen3.8 Max Prime | `qwen/qwen3.8-max-prime` |
-| GLM 5.3 | `z-ai/glm-5.3` |
-| Muse Spark 1.3 | `meta/muse-spark-1.3` |
-| Mistral Large 2512 | `mistralai/mistral-large-2512` |
 
-Every call asks providers not to collect your data. If no provider of a model accepts that, pick another model.
+Another model id can be saved in the API keys window. The three above are the ones configured for Chat.
 
 ## 16. Recordings
 
@@ -431,7 +421,7 @@ A recording on screen shows **Cost** instead of Spend, an **Export** button, and
 
 Needs: About what the show cost
 
-**Replay** runs a recording's audio through the whole pipeline again, in real time, as a new recording (the original is untouched). It uses the transcription engine selected now and the label set last picked in Start live, with fact-checking on when an OpenRouter key is set (transcript only otherwise). Results can differ, since the AI models are not deterministic. To look at a show again, **Open** it instead: it is free.
+**Replay** runs a recording's audio through the whole pipeline again, in real time, as a new recording (the original is untouched). It uses the transcription engine selected now and the label set last picked in Start live, with fact-checking on when a TypeSafe key is set (transcript only otherwise). Research still needs the OpenAI key. Results can differ, since the AI models are not deterministic. To look at a show again, **Open** it instead: it is free.
 
 ## 17. Playback
 
@@ -507,7 +497,7 @@ Tattle itself is free. Paid calls go to your own accounts, and the header shows 
 
 **Note: No spending limit in the app.**
 
-The app shows what it spends but does not stop. Give your OpenRouter key a credit limit (for example $10) at openrouter.ai/settings/keys, and keep OpenAI on prepaid credit with automatic recharge off.
+The app shows what it spends but does not stop. Keep the OpenAI account on prepaid credit with automatic recharge off. TypeSafe bills Jev by the token.
 
 ## 20. Privacy
 
@@ -518,14 +508,15 @@ No server of our own, no account, no analytics, no telemetry. Nothing goes to th
 | What | Sent to | When |
 | --- | --- | --- |
 | The conversation's audio | OpenAI, with your key | Only with the OpenAI engine, during a session or replay, never while paused. With Apple Speech, audio never leaves your Mac. |
-| Transcript lines | OpenRouter, with your key | With fact-checking or labels on (Jev's questions, GPT-6 Luna's research and audits) |
-| Your chat questions, with the transcript | OpenRouter, to the model you pick | When you ask |
-| The first 10 minutes of a transcript; your show description and draft set | OpenRouter | Try on a recording; Create with AI |
+| Transcript lines | TypeSafe, with your key, for Jev; OpenAI, with your key, for research and audits | With fact-checking or labels on |
+| Your chat questions, with the transcript | OpenAI, to the model you pick | When you ask |
+| The first 10 minutes of a transcript | TypeSafe | Try on a recording |
+| Your show description and draft set | OpenAI | Create with AI |
 | A key being checked | Its own service | When you save it |
 | An update check | GitHub | At launch and every 4 hours, never on air |
 | A fingerprint (32 bytes) of a recording's seal, and of an exported transcript; never its words or audio | DigiCert, GlobalSign, and FreeTSA | Only with [trusted timestamps](https://hey-tattle.com/docs#proof) on (off by default): when a recording ends, and when its transcript is exported |
 
-Calls to OpenRouter ask providers not to collect your data. A transcript-only show on Apple Speech sends nothing anywhere.
+A transcript-only show on Apple Speech sends nothing anywhere. OpenAI and TypeSafe each see only the calls their key is used for.
 
 **Note: Record with consent.**
 
@@ -624,7 +615,7 @@ https://hey-tattle.com/docs#show-checklist
 - Everyone wears headphones; the host wears **earbuds**. On the Mac's speakers, speaker mode drops whatever the host says over a guest.
 - In your call app, pick the Mac's built-in microphone: AirPods switch to a low-quality call mode when an app opens their mic.
 - Turn on a Focus mode: Tattle records every sound the Mac plays, notifications included.
-- Your OpenRouter key has a credit limit.
+- Your TypeSafe key is set if you want fact-checking or labels, and your OpenAI key is set if you want research, Chat, or Create with AI.
 - The label set is picked and tonight's stories are typed in.
 - Rename speakers as they first speak, and merge duplicates.
 - Screen-sharing the app to your audience? It is laid out to fit 1280 × 720.
@@ -665,7 +656,7 @@ On Apple Speech, the speech model is still downloading (**Getting on-device spee
 
 ### Fact-checks, labels, or Chat stop
 
-The header's spend reads **OpenRouter stopped**, or Chat says the credits or the key's limit are exhausted (402): add credit, or raise the key's limit, at openrouter.ai. A model that is rate-limited (429) or whose providers all refuse the privacy setting: pick another model.
+The header's spend turns red and the hover names the provider (402: out of credit, or over the key's limit). For OpenAI, add credit at [platform.openai.com](https://platform.openai.com). For TypeSafe, check the key at [console.typesafe.ai/keys](https://console.typesafe.ai/keys). A model that is rate-limited (429): wait, or pick another model.
 
 ### The app did not reopen after an update
 
@@ -683,7 +674,7 @@ Click **Open System Settings**, turn on Tattle under Microphone, then quit and r
 
 ### A key is refused
 
-Copy it again, whole, into the right field (OpenRouter keys start with `sk-or-`, OpenAI keys with `sk-`). If the service rejects it, check it was not revoked, deleted, or disabled.
+Copy it again, whole, into the right field. A TypeSafe key pasted into the OpenAI field (or the other way around) is refused. If the service rejects it, check it was not revoked, deleted, or disabled.
 
 Anything else: Insights → Log lists the last 30 errors, and [Help](https://hey-tattle.com/docs#help) says where to ask.
 
@@ -744,4 +735,4 @@ https://hey-tattle.com/docs#help
 - **Licence**: Tattle is free and open-source software under the [BSD 3-Clause License](https://github.com/nicolasdao/tattle/blob/master/LICENSE), © 2026 Cloudless Consulting Pty Ltd. The components it includes, and their licences, are under Help → Licenses and Acknowledgements and in [THIRD_PARTY_NOTICES.md](https://github.com/nicolasdao/tattle/blob/master/THIRD_PARTY_NOTICES.md).
 - **Made by** [Nicolas Dao](https://nicolasdao.com) at [Cloudless Labs](https://cloudlesslabs.com), in Sydney. Follow him on [YouTube](https://www.youtube.com/@nicolasdao) and [X](https://x.com/realnicdao), and watch [MadKoo](https://www.youtube.com/@theMadKoo), the podcast where Tattle was first demoed.
 
-Tattle is an independent project, not affiliated with, sponsored, or endorsed by Apple, OpenAI, OpenRouter, or TypeSafe AI.
+Tattle is an independent project, not affiliated with, sponsored, or endorsed by Apple, OpenAI, or TypeSafe AI.

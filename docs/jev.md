@@ -25,21 +25,20 @@ The idea the project demonstrates: ordinary software should call a model for **b
 
 ## The API
 
-This project calls Jev through OpenRouter's Decisions API (alpha), pinned to `typesafe/jev-1.13`:
+This project calls Jev on TypeSafe's own API, pinned to `jev-1.13.0` (the version the thresholds were calibrated against; `jev-latest` would move them):
 
 ```http
-POST https://openrouter.ai/api/alpha/decisions
-Authorization: Bearer $OPENROUTER_API_KEY
+POST https://api.typesafe.ai/v1/systemone
+Authorization: Bearer $TYPESAFE_API_KEY
 Content-Type: application/json
-X-OpenRouter-Title: Tattle
 
-{ "model": "typesafe/jev-1.13",
+{ "model": "jev-1.13.0",
   "state": { ... },
-  "questions": { "<snake_case_id>": { "type": "noul" | "choice" | "score", "instructions": "...", "criteria": ... } },
-  "provider": { "data_collection": "deny" } }
+  "questions": { "<snake_case_id>": { "type": "noul" | "choice" | "score", "instructions": "...", "criteria": ... } } }
 ```
 
-The response carries `answers` (one per question id), `id`, `model` (the resolved snapshot — currently `typesafe/jev-1.13-20260917`), `provider` (`TypeSafe`), and `usage: { input_tokens, output_tokens, cost }`. The raw HTTP API uses snake_case.
+The response carries `answers` (one per question id), `id`, `model` (whatever version answered), and `usage`. `usage.cost` may be absent; the client then prices input tokens at $42 per billion. Output tokens are free. There is no `provider` field and no per-request data-collection flag.
+
 
 ### Question types
 
@@ -160,9 +159,9 @@ Computed in code, not by Jev: a **marker** when its answer reaches the marker's 
 
 No LLM changes these labels or a set on its own: the host is System 2 for the timeline, because the timeline has no outcome signal to learn from (unlike fact-checks, whose verdicts grade the flags — see [System 1 and System 2](system1-system2.md)).
 
-**Try on a recording** (`POST /api/label-sets/try`) shows what a draft would draw before a show: it rebuilds the recording's segments from its events, asks Jev the draft's questions about those that start in the first 10 minutes, and returns the draft's labels next to the recording's own. It works on transcript-only recordings too, whose segments were closed at pauses rather than by the boundary question. Nothing is written into the recording's folder; the calls are logged to `label-tries.jsonl` beside the recordings, A try asks about 40 segments at most. It needs the OpenRouter key and is refused on air (409).
+**Try on a recording** (`POST /api/label-sets/try`) shows what a draft would draw before a show: it rebuilds the recording's segments from its events, asks Jev the draft's questions about those that start in the first 10 minutes, and returns the draft's labels next to the recording's own. It works on transcript-only recordings too, whose segments were closed at pauses rather than by the boundary question. Nothing is written into the recording's folder; the calls are logged to `label-tries.jsonl` beside the recordings. A try asks about 40 segments at most. It needs the TypeSafe key and is refused on air (409).
 
-**Create with AI** (`POST /api/label-sets/assist`, `src/labels/assist.ts`) lets an LLM **draft** a set, as the mission allows, by **interviewing** the host so nobody starts from a blank page. The app asks the first question itself ("What kind of conversation will you label…?"); then `labelsAssist.model` (GPT-6 Luna, fixed in `config/app.json`, no picker, at `high` effort) asks one question at a time, with up to 4 answers to click, until the set is configured. What is still missing is computed by code, not remembered by the model (`src/labels/interview.ts`): each host message carries a checklist built from the draft on screen — what the conversation is; categories, each with its question, 2 or more options, and a fallback; an optional index; scores, each with 5 levels; markers, each with its question and (recommended) yes and no wording; a name — marked done, required, recommended, or declined, with the next item to settle. The model proposes what the host leaves out (options, levels, wording, thresholds, icons) straight into the draft for the host to confirm, answers "what is" and "why" questions from a system prompt that carries every definition, limit, default, and the reason behind each, and records kinds the host declines ("no scores"), which the page sends back each turn. A draft that is only incomplete is kept (the checklist asks for the rest); one that breaks a rule (over a limit, a reserved or duplicated id) is sent back once with its errors, and if it still does, the draft on screen is left as it was. Each message also carries the draft as the host last edited it, so hand edits win. The model's reply is strict JSON `{ reply, question, choices, skip, set }`. The host reviews, edits, tries, and saves; nothing is saved by the model. Its running cost shows under the chat; its calls are logged to `label-assist.jsonl` beside the recordings. It needs the OpenRouter key. How well GPT-6 Luna writes the questions Jev reads has not been measured yet.
+**Create with AI** (`POST /api/label-sets/assist`, `src/labels/assist.ts`) lets an LLM **draft** a set, as the mission allows, by **interviewing** the host so nobody starts from a blank page. The app asks the first question itself ("What kind of conversation will you label…?"); then `labelsAssist.model` (GPT-6 Luna, fixed in `config/app.json`, no picker, at `high` effort) asks one question at a time, with up to 4 answers to click, until the set is configured. What is still missing is computed by code, not remembered by the model (`src/labels/interview.ts`): each host message carries a checklist built from the draft on screen — what the conversation is; categories, each with its question, 2 or more options, and a fallback; an optional index; scores, each with 5 levels; markers, each with its question and (recommended) yes and no wording; a name — marked done, required, recommended, or declined, with the next item to settle. The model proposes what the host leaves out (options, levels, wording, thresholds, icons) straight into the draft for the host to confirm, answers "what is" and "why" questions from a system prompt that carries every definition, limit, default, and the reason behind each, and records kinds the host declines ("no scores"), which the page sends back each turn. A draft that is only incomplete is kept (the checklist asks for the rest); one that breaks a rule (over a limit, a reserved or duplicated id) is sent back once with its errors, and if it still does, the draft on screen is left as it was. Each message also carries the draft as the host last edited it, so hand edits win. The model's reply is strict JSON `{ reply, question, choices, skip, set }`. The host reviews, edits, tries, and saves; nothing is saved by the model. Its running cost shows under the chat; its calls are logged to `label-assist.jsonl` beside the recordings. It needs the OpenAI key. How well GPT-6 Luna writes the questions Jev reads has not been measured yet.
 
 ## The client — `src/jev/client.ts`
 

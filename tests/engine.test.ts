@@ -153,24 +153,27 @@ describe("Engine.start", () => {
 
   test("the keys a session needs, when it calls the real services", async () => {
     const engine = new Engine({ sessionsDir: tmpDir("sessions-") });
-    await withEnv({ OPENAI_API_KEY: undefined, OPENROUTER_API_KEY: undefined }, async () => {
-      await expect(engine.start({ mode: "replay" })).rejects.toMatchObject({ status: 400, extra: { needsKey: "openrouter" } });
-      await expect(engine.start({ mode: "replay", features: { factcheck: false }, labelSet: "ai-podcast" })).rejects.toMatchObject({ extra: { needsKey: "openrouter" } });
+    await withEnv({ OPENAI_API_KEY: undefined, OPENROUTER_API_KEY: undefined, TYPESAFE_API_KEY: undefined }, async () => {
+      await expect(engine.start({ mode: "replay" })).rejects.toMatchObject({ status: 400, extra: { needsKey: "typesafe" } });
+      await expect(engine.start({ mode: "replay", features: { factcheck: false }, labelSet: "ai-podcast" })).rejects.toMatchObject({ extra: { needsKey: "typesafe" } });
       const noOpenai = engine.start({ mode: "replay", features: OFF });
       await expect(noOpenai).rejects.toMatchObject({ status: 400, message: "Transcribing with OpenAI needs an OpenAI API key.", extra: { needsKey: "openai" } });
       // labels off by a null set count as off too
       await expect(engine.start({ mode: "replay", features: { factcheck: false }, labelSet: null })).rejects.toMatchObject({ extra: { needsKey: "openai" } });
     });
+    await withEnv({ OPENAI_API_KEY: undefined, TYPESAFE_API_KEY: "ts-env-00000000000000000000" }, async () => {
+      await expect(engine.start({ mode: "replay" })).rejects.toMatchObject({ status: 400, extra: { needsKey: "openai" } });
+    });
     // with both keys (from the environment, or given to the sessions) the checks pass and the request's own errors show
-    await withEnv({ OPENAI_API_KEY: "sk-proj-env-000000000000000000", OPENROUTER_API_KEY: "sk-or-v1-env-0000000000000000" }, async () => {
+    await withEnv({ OPENAI_API_KEY: "sk-proj-env-000000000000000000", TYPESAFE_API_KEY: "ts-env-00000000000000000000" }, async () => {
       await expect(engine.start({ mode: "nope" } as never)).rejects.toThrow("mode must be replay or live");
     });
-    await withEnv({ OPENAI_API_KEY: undefined, OPENROUTER_API_KEY: undefined }, async () => {
-      const keyed = new Engine({ sessionsDir: tmpDir("sessions-"), session: { keys: { openai: "sk-proj-k-000000000000000", openrouter: "sk-or-v1-k-00000000000000" } } });
-      expect(keyed.openrouterKeySet()).toBe(true);
+    await withEnv({ OPENAI_API_KEY: undefined, OPENROUTER_API_KEY: undefined, TYPESAFE_API_KEY: undefined }, async () => {
+      const keyed = new Engine({ sessionsDir: tmpDir("sessions-"), session: { keys: { openai: "sk-proj-k-000000000000000", typesafe: "ts-k-00000000000000000000" } } });
+      expect(keyed.typesafeKeySet()).toBe(true);
       await expect(keyed.start({ mode: "nope" } as never)).rejects.toThrow("mode must be replay or live");
-      const blank = new Engine({ sessionsDir: tmpDir("sessions-"), openrouterKey: "  " });
-      expect(blank.openrouterKeySet()).toBe(false);
+      const blank = new Engine({ sessionsDir: tmpDir("sessions-"), typesafeKey: "  " });
+      expect(blank.typesafeKeySet()).toBe(false);
     });
   });
 
@@ -516,10 +519,10 @@ describe("recordings through the engine", () => {
 });
 
 describe("the chat's session", () => {
-  const KEY = "sk-or-v1-chat-test-0000000000000";
+  const KEY = "sk-proj-chat-test-00000000000000";
 
   test("no session on screen: nothing to list, and a new chat is refused", async () => {
-    const { engine } = offlineEngine({ openrouterKey: KEY, fetch: fakeOpenRouter().fetchFn });
+    const { engine } = offlineEngine({ openaiKey: KEY, fetch: fakeOpenRouter().fetchFn });
     expect(engine.chat.list()).toMatchObject({ sessionId: null, chats: [] });
     await expect(engine.chat.create()).rejects.toMatchObject({ status: 409 });
   });
@@ -528,7 +531,7 @@ describe("the chat's session", () => {
     const root = tmpDir("library-");
     makeSession(root, "20260924-100000", { startedAt: "2026-09-24T10:00:00Z", lines: [["u_1", "Jev is cheaper."]] });
     const { fetchFn, bodies } = fakeOpenRouter();
-    const { engine } = offlineEngine({ sessionsDir: root, openrouterKey: KEY, fetch: fetchFn });
+    const { engine } = offlineEngine({ sessionsDir: root, openaiKey: KEY, fetch: fetchFn });
     engine.openSession("20260924-100000");
     const chat: any = await engine.chat.create();
     const sink: string[] = [];
@@ -548,7 +551,7 @@ describe("the chat's session", () => {
     requireAssets();
     const live = fakeLive();
     const { fetchFn } = fakeOpenRouter();
-    const { engine } = offlineEngine({ live: live.capture, openrouterKey: KEY, fetch: fetchFn });
+    const { engine } = offlineEngine({ live: live.capture, openaiKey: KEY, fetch: fetchFn });
     await engine.start({ mode: "live", features: OFF });
     const chat: any = await engine.chat.create();
     const types: string[] = [];
@@ -560,18 +563,19 @@ describe("the chat's session", () => {
   });
 
   test("without a fetch of its own, the chat uses the global one (refused offline): no catalogue", async () => {
-    const { engine } = offlineEngine({ openrouterKey: KEY });
+    const { engine } = offlineEngine({ openaiKey: KEY });
     expect((await engine.chat.models()).models.every((m) => m.available === null)).toBe(true);
   });
 
   test("the chat reads the key on each call, from the environment when none is given", async () => {
-    await withEnv({ OPENROUTER_API_KEY: "sk-or-v1-from-env-000000000000" }, () => {
+    await withEnv({ OPENAI_API_KEY: "sk-proj-from-env-000000000000", OPENROUTER_API_KEY: undefined }, () => {
       const { engine } = offlineEngine();
-      expect(engine.openrouterKeySet()).toBe(true);
-      expect((engine.chat as unknown as { deps: { apiKey: string } }).deps.apiKey).toBe("sk-or-v1-from-env-000000000000");
+      expect(engine.openaiKeySet()).toBe(true);
+      expect((engine.chat as unknown as { deps: { apiKey: string } }).deps.apiKey).toBe("sk-proj-from-env-000000000000");
     });
-    await withEnv({ OPENROUTER_API_KEY: undefined }, () => {
+    await withEnv({ OPENAI_API_KEY: undefined, OPENROUTER_API_KEY: "sk-or-v1-from-env-000000000000" }, () => {
       const { engine } = offlineEngine();
+      expect(engine.openaiKeySet()).toBe(false);
       expect((engine.chat as unknown as { deps: { apiKey: string } }).deps.apiKey).toBe("");
     });
   });
@@ -919,11 +923,11 @@ describe("label sets through the engine", () => {
     for (const body of [null, "x", [1, 2], { id: 5 }]) expect(engine.labelSetApi.estimate(body)).toMatchObject({ ok: false });
   });
 
-  test("Create with AI: OpenRouter's refusals keep their status; other failures are a 400; the draft and skips pass through", async () => {
+  test("Create with AI: OpenAI's refusals keep their status; other failures are a 400; the draft and skips pass through", async () => {
     const root = tmpDir("assist-");
     const answer = (status: number, body: unknown) => (async () => new Response(JSON.stringify(body), { status })) as unknown as typeof fetch;
     const body = { conversationId: "c1", messages: [{ role: "user", content: "A cooking show." }] };
-    const withFetch = (f: typeof fetch) => new Engine({ sessionsDir: root, openrouterKey: "sk-or-v1-test-key-000000000000", fetch: f });
+    const withFetch = (f: typeof fetch) => new Engine({ sessionsDir: root, openaiKey: "sk-proj-test-key-000000000000", fetch: f });
     await expect(withFetch(answer(401, { error: { message: "bad key" } })).labelSetApi.assist(body)).rejects.toMatchObject({ status: 401 });
     await expect(withFetch(answer(402, { error: { message: "no credit" } })).labelSetApi.assist(body)).rejects.toMatchObject({ status: 402 });
     const ok = withFetch((async () => new Response(JSON.stringify({ id: "g", choices: [{ message: { content: "{}" } }], usage: { cost: 0.1 } }))) as unknown as typeof fetch);
@@ -935,12 +939,12 @@ describe("label sets through the engine", () => {
     const seen: string[] = [];
     const viaSession = new Engine({
       sessionsDir: root,
-      session: { keys: { openrouter: "sk-or-v1-session-key-00000000000" }, fetch: (async (_u: string, init: RequestInit) => { seen.push(String((init.headers as Record<string, string>).Authorization)); return new Response("{}", { status: 401 }); }) as unknown as typeof fetch },
+      session: { keys: { openai: "sk-proj-session-key-000000000000" }, fetch: (async (_u: string, init: RequestInit) => { seen.push(String((init.headers as Record<string, string>).Authorization)); return new Response("{}", { status: 401 }); }) as unknown as typeof fetch },
     });
-    await withEnv({ OPENROUTER_API_KEY: undefined }, async () => {
+    await withEnv({ OPENAI_API_KEY: undefined }, async () => {
       await expect(viaSession.labelSetApi.assist(body)).rejects.toMatchObject({ status: 401 });
     });
-    expect(seen[0]).toBe("Bearer sk-or-v1-session-key-00000000000");
+    expect(seen[0]).toBe("Bearer sk-proj-session-key-000000000000");
     expect(readFileSync(join(root, "label-assist.jsonl"), "utf8").trim().split("\n").length).toBeGreaterThanOrEqual(4);
     await expect(withFetch(answer(200, {})).labelSetApi.assist({ conversationId: "c1", messages: "hi" })).rejects.toMatchObject({ status: 400 });
     await expect(withFetch(answer(200, {})).labelSetApi.assist(undefined)).rejects.toMatchObject({ status: 400, message: "conversationId is required" });
@@ -959,23 +963,23 @@ describe("label sets through the engine", () => {
       ev("segment.closed", { id: "seg_1", startMs: 0, endMs: 3000, forced: false, final: true, utteranceIds: ["u_1", "u_2"] }),
     ].join("\n") + "\n");
     const set = JSON.parse(readFileSync("config/labels/ai-podcast.json", "utf8"));
-    // the global fetch, for this test only: OpenRouter refuses the key (not retried), and records which key was sent
+    // the global fetch, for this test only: the service refuses the key (not retried), and records which key was sent
     const sent: string[] = [];
     vi.stubGlobal("fetch", async (_u: string, init: RequestInit) => { sent.push(String((init.headers as Record<string, string>).Authorization)); return new Response("{}", { status: 401 }); });
     try {
-      await withEnv({ OPENROUTER_API_KEY: "sk-or-v1-from-env-000000000000" }, async () => {
+      await withEnv({ OPENAI_API_KEY: "sk-proj-from-env-000000000000", TYPESAFE_API_KEY: "ts-from-env-0000000000000000", OPENROUTER_API_KEY: undefined }, async () => {
         const engine = new Engine({ sessionsDir: root });
         await expect(engine.labelSetApi.assist({ conversationId: "c1", messages: [{ role: "user", content: "A show." }] })).rejects.toMatchObject({ status: 401 });
         expect(await engine.labelSetApi.tryOn({ set, sessionId: "20260924-100000" })).toMatchObject({ failed: 1 });
       });
-      await withEnv({ OPENROUTER_API_KEY: undefined }, async () => {
-        const keyed = new Engine({ sessionsDir: root, session: { keys: { openrouter: "sk-or-v1-session-000000000000" } } });
+      await withEnv({ OPENAI_API_KEY: undefined, TYPESAFE_API_KEY: undefined, OPENROUTER_API_KEY: undefined }, async () => {
+        const keyed = new Engine({ sessionsDir: root, session: { keys: { typesafe: "ts-session-0000000000000000" } } });
         expect(await keyed.labelSetApi.tryOn({ set, sessionId: "20260924-100000" })).toMatchObject({ failed: 1 });
       });
     } finally {
       vi.unstubAllGlobals();
     }
-    expect(sent).toEqual(["Bearer sk-or-v1-from-env-000000000000", "Bearer sk-or-v1-from-env-000000000000", "Bearer sk-or-v1-session-000000000000"]);
+    expect(sent).toEqual(["Bearer sk-proj-from-env-000000000000", "Bearer ts-from-env-0000000000000000", "Bearer ts-session-0000000000000000"]);
   });
 
   test("Try on a recording: the default and capped minutes, and a missing session id", async () => {
@@ -990,7 +994,7 @@ describe("label sets through the engine", () => {
       }
       return new Response(JSON.stringify({ answers, id: "gen-x", model: "typesafe/jev-1.13", provider: "TypeSafe", usage: { cost: 0.0001 } }));
     }) as unknown as typeof fetch;
-    const { engine } = offlineEngine({ sessionsDir: root, openrouterKey: "sk-or-v1-test-key-000000000000", fetch: jev });
+    const { engine } = offlineEngine({ sessionsDir: root, typesafeKey: "ts-test-key-0000000000000000", fetch: jev });
     const set = JSON.parse(readFileSync("config/labels/ai-podcast.json", "utf8"));
     await expect(engine.labelSetApi.tryOn({ set })).rejects.toMatchObject({ status: 400, message: "sessionId is required" });
     await expect(engine.labelSetApi.tryOn(undefined)).rejects.toMatchObject({ status: 400 });
@@ -1034,12 +1038,12 @@ describe("bootEngine, in an isolated home", () => {
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
     await withEnv({
       HOME: home, TATTLE_CREDENTIALS: join(home, "credentials.json"), TATTLE_SETTINGS: join(home, "settings.json"),
-      TATTLE_FORCE_NO_APPLE_SPEECH: "1", OPENAI_API_KEY: undefined, OPENROUTER_API_KEY: undefined,
+      TATTLE_FORCE_NO_APPLE_SPEECH: "1", OPENAI_API_KEY: undefined, OPENROUTER_API_KEY: undefined, TYPESAFE_API_KEY: undefined,
     }, async () => {
       const { engine, keys, transcription, ready, server } = bootEngine();
       await ready;
       expect(transcription.engine).toBe("openai");
-      expect(keys.missing()).toEqual(["openai", "openrouter"]);
+      expect(keys.missing()).toEqual(["openai", "typesafe"]);
       expect(JSON.parse(readFileSync(join(home, "settings.json"), "utf8"))).toEqual({ transcriptionEngine: "openai" });
       const { base, close } = await listen(server);
       try {

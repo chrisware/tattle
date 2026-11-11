@@ -75,13 +75,13 @@ export function trackDocumentListeners(): () => void {
   };
 }
 
-/** GET /api/setup's answer with the OpenRouter key set or not. */
-export function setupWith(openrouter: boolean) {
+/** GET /api/setup's answer with the TypeSafe key set or not. */
+export function setupWith(typesafe: boolean) {
   return {
     configured: true, required: [], path: "/tmp/credentials.json",
     keys: [
       { name: "openai", env: "OPENAI_API_KEY", set: false, source: null, hint: null },
-      { name: "openrouter", env: "OPENROUTER_API_KEY", set: openrouter, source: openrouter ? "file" : null, hint: openrouter ? "abcd" : null },
+      { name: "typesafe", env: "TYPESAFE_API_KEY", set: typesafe, source: typesafe ? "file" : null, hint: typesafe ? "abcd" : null },
     ],
   };
 }

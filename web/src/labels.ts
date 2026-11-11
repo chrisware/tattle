@@ -151,7 +151,7 @@ export async function renderLabelLibrary() {
       h("div", { class: "rec-tools lset-tools" },
         h("button", { class: "btn primary", onclick: () => openEditor(blankSet(), { readOnly: false }) }, "New"),
         h("button", { class: "btn", title: "Add a .tattle-labels file someone shared with you", onclick: () => picker.click() }, "Import"),
-        h("button", { class: "btn", title: "Describe your show and let GPT-6 Luna draft a set for you to review (needs the OpenRouter key)", onclick: () => openCreateWithAi() }, icon("sparkle"), "Create with AI"),
+        h("button", { class: "btn", title: "Describe your show and let the model draft a set for you to review (needs the OpenAI key)", onclick: () => openCreateWithAi() }, icon("sparkle"), "Create with AI"),
         picker),
       h("div", { class: "rec-list lset-list" }),
       h("p", { class: "note" }, "A label set is what the timeline asks Jev about each stretch of a show: up to 2 categories, 2 scores, and 8 markers. Pick one in Start live. Sets are files on this Mac; making or editing one sends nothing anywhere."));
@@ -542,10 +542,10 @@ async function openTry(host: EditorHost & { lastCheck(): LabelSetCheck | null; c
   const keyBox = h("div", { hidden: true });
   const result = h("div", { class: "ltry-result" });
   const tryIt = async () => {
-    if (!keySet("openrouter")) {
-      // the key is asked for here, inside this window: Try calls Jev, through OpenRouter
+    if (!keySet("typesafe")) {
+      // the key is asked for here, inside this window: Try calls Jev, through TypeSafe
       keyBox.hidden = false;
-      replace(keyBox, keyPrompt("openrouter", "Please provide your OpenRouter API key to try a label set on a recording.", {
+      replace(keyBox, keyPrompt("typesafe", "Please provide your TypeSafe API key to try a label set on a recording.", {
         onSaved: () => { keyBox.hidden = true; replace(keyBox); void tryIt(); },
         onCancel: () => { keyBox.hidden = true; replace(keyBox); },
       }));
@@ -559,7 +559,7 @@ async function openTry(host: EditorHost & { lastCheck(): LabelSetCheck | null; c
       const r = await api.tryLabelSet(draft, id, 10);
       showTry(result, draft, r, rec);
     } catch (e) {
-      if (e instanceof ApiError && e.body?.needsKey === "openrouter") { await setupStatus(); go.disabled = false; return void tryIt(); }
+      if (e instanceof ApiError && e.body?.needsKey === "typesafe") { await setupStatus(); go.disabled = false; return void tryIt(); }
       replace(result, h("p", { class: "error-text" }, e instanceof Error ? e.message : String(e)));
     } finally {
       go.disabled = false;
@@ -643,11 +643,11 @@ export function openCreateWithAi() {
       h("ul", {}, shown.map((x) => h("li", { class: `st-${x.status}`, title: x.detail ?? "" }, h("span", { class: "mk" }, STATUS_MARK[x.status]), x.label))));
   };
   const needKey = () => {
-    const missing = !keySet("openrouter");
+    const missing = !keySet("openai");
     keyBox.hidden = !missing;
     chat.hidden = missing;
     if (missing) {
-      replace(keyBox, keyPrompt("openrouter", "Please provide your OpenRouter API key to create labels with AI.", {
+      replace(keyBox, keyPrompt("openai", "Please provide your OpenAI API key to create labels with AI.", {
         onSaved: () => { replace(keyBox); needKey(); input.focus(); },
       }));
     }
@@ -677,7 +677,7 @@ export function openCreateWithAi() {
     } catch (e) {
       typing.remove();
       messages.pop();
-      if (e instanceof ApiError && e.body?.needsKey === "openrouter") { await setupStatus(); input.value = text; log.lastElementChild?.remove(); needKey(); return; }
+      if (e instanceof ApiError && e.body?.needsKey === "openai") { await setupStatus(); input.value = text; log.lastElementChild?.remove(); needKey(); return; }
       aiBubble({ reply: e instanceof Error ? e.message : String(e), question: "", choices: [] }, undefined, true);
     } finally {
       send.disabled = false;

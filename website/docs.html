@@ -51,7 +51,7 @@
       "isPartOf": { "@id": "https://hey-tattle.com/#website" },
       "inLanguage": "en",
       "datePublished": "2026-09-30",
-      "dateModified": "2026-10-28",
+      "dateModified": "2026-11-11",
       "about": { "@id": "https://hey-tattle.com/#app" },
       "author": { "@id": "https://nicolasdao.com/#nicolas-dao" },
       "publisher": { "@id": "https://cloudlesslabs.com#org" }
@@ -112,7 +112,7 @@
       <div class="strap"><span class="eyebrow">The manual · every feature</span><h1 class="name">How to use Tattle</h1></div>
     </div>
     <p class="dlede">Tattle listens to your calls. It <b>transcribes</b> them as people speak, <b>maps</b> the conversation on a timeline, and <b>fact-checks</b> claims as they're said. This page covers everything it does, from the first launch to the last export.</p>
-    <p class="dmeta">Last updated <time datetime="2026-10-28">28 Oct 2026</time> · Tattle for Mac is not affiliated with Tattle Civic Tech (tattle.co.in) or other apps named Tattle.</p>
+    <p class="dmeta">Last updated <time datetime="2026-11-11">11 Nov 2026</time> · Tattle for Mac is not affiliated with Tattle Civic Tech (tattle.co.in) or other apps named Tattle.</p>
     <div class="dhead-row">
       <a class="ca-download" data-when="mac" data-download href="https://github.com/nicolasdao/tattle/releases/latest">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="square" aria-hidden="true"><path d="M12 3v12M6 10l6 6 6-6M4 21h16"/></svg>
@@ -179,7 +179,7 @@
           <tr><td>A Mac with Apple Silicon</td><td>M1 or later. Intel Macs are not supported.</td></tr>
           <tr><td>macOS 14.2 or later</td><td>macOS 26 or later transcribes on the Mac itself, for free. macOS 14.2 to 25 transcribes with OpenAI.</td></tr>
           <tr><td>Earbuds or headphones</td><td>Recommended: they keep the call out of your microphone. See <a href="#speaker-mode">speaker mode</a>.</td></tr>
-          <tr><td>Accounts</td><td>None for transcripts on macOS 26+. An OpenRouter key for fact-checking, labels, and Chat. An OpenAI key on older macOS. See <a href="#keys">Keys and accounts</a>.</td></tr>
+          <tr><td>Accounts</td><td>None for transcripts on macOS 26+. A TypeSafe key for fact-checking and labels. An OpenAI key for Chat, fact-check research, Create with AI, and transcription on older macOS. See <a href="#keys">Keys and accounts</a>.</td></tr>
         </tbody>
       </table></div>
       <ol class="steps">
@@ -239,8 +239,8 @@ shasum -a 256 Tattle-&lt;version&gt;-arm64.dmg                             # mat
         <thead><tr><th scope="col">Key</th><th scope="col">What needs it</th><th scope="col">Where to get it</th></tr></thead>
         <tbody>
           <tr><td>None</td><td>Transcripts on macOS 26 or later (Apple Speech), speakers, the timeline's segments, recordings, playback, export and import</td><td>—</td></tr>
-          <tr><td>OpenAI</td><td>Transcription on macOS 14.2 to 25, or when you pick the OpenAI engine</td><td><a href="https://platform.openai.com">platform.openai.com</a>, with prepaid credit. Keys start with <code>sk-</code></td></tr>
-          <tr><td>OpenRouter</td><td>Fact-checking, labels, Chat, Create with AI, and Try on a recording</td><td><a href="https://openrouter.ai">openrouter.ai</a>, with prepaid credit. Keys start with <code>sk-or-</code></td></tr>
+          <tr><td>OpenAI</td><td>Chat, Create with AI, fact-check research, and transcription on macOS 14.2 to 25 or when you pick the OpenAI engine</td><td><a href="https://platform.openai.com">platform.openai.com</a>, with prepaid credit. Keys start with <code>sk-</code></td></tr>
+          <tr><td>TypeSafe</td><td>Fact-checking (Jev) and labels, including Try on a recording</td><td><a href="https://console.typesafe.ai/keys">console.typesafe.ai/keys</a></td></tr>
         </tbody>
       </table></div>
 
@@ -253,23 +253,24 @@ shasum -a 256 Tattle-&lt;version&gt;-arm64.dmg                             # mat
       </ol>
       <p>A transcript costs about $1.23 an hour of show. After saving: <span class="ui">All set. Opening Tattle…</span></p>
 
-      <h3 id="openrouter-prompts">The OpenRouter key, when you first need it</h3>
-      <p>Nothing asks for OpenRouter until you turn on a feature that needs it. A card then appears in place, with the guide open, a <span class="ui">Save</span> button and sometimes <span class="ui">Not now</span>:</p>
+      <h3 id="openrouter-prompts">The TypeSafe and OpenAI keys, when you first need them</h3>
+      <p>Nothing asks for a key until you turn on a feature that needs it. A card then appears in place, with the guide open, a <span class="ui">Save</span> button and sometimes <span class="ui">Not now</span>:</p>
       <ul>
-        <li>In <span class="ui">Start live</span>, turning on Fact-check or picking a label set: "Please provide your OpenRouter API key to configure fact-checking or labeling." <span class="ui">Not now</span> turns both off.</li>
-        <li>Opening Chat: "Please provide your OpenRouter API key to use Chat."</li>
-        <li>Labels → Try on a recording, and Labels → Create with AI.</li>
+        <li>In <span class="ui">Start live</span>, turning on Fact-check or picking a label set: "Please provide your TypeSafe API key to configure fact-checking or labeling." <span class="ui">Not now</span> turns both off. Starting with Fact-check on also asks for the OpenAI key: "Please provide your OpenAI API key. Fact-checking research uses it. Jev uses TypeSafe." <span class="ui">Not now</span> turns fact-checking off and leaves labels on.</li>
+        <li>Opening Chat: "Please provide your OpenAI API key to use Chat."</li>
+        <li>Labels → Try on a recording: "Please provide your TypeSafe API key to try a label set on a recording."</li>
+        <li>Labels → Create with AI: "Please provide your OpenAI API key to create labels with AI."</li>
       </ul>
-      <p>The guide: sign up at openrouter.ai, Settings → Credits ($10, auto top-up off), Settings → API keys, name it Tattle, and <strong>give it a credit limit</strong> such as $10. The app sets no spending limit of its own: the key's limit is the one that stops a mistake.</p>
+      <p>TypeSafe: sign in at <a href="https://console.typesafe.ai/keys">console.typesafe.ai/keys</a> and create a key. OpenAI: the same account as transcription (<a href="https://platform.openai.com">platform.openai.com</a>, prepaid credit, automatic recharge off). The app sets no spending limit of its own. TypeSafe bills Jev by the token; the OpenAI key's own limit caps Chat, label drafting, and fact-check research.</p>
 
       <h3 id="key-checks">How a key is checked</h3>
-      <p>Before saving, Tattle makes a free request to the service with the key (10 s at most). It refuses a key that is empty, has spaces or line breaks, looks cut short, belongs to the other service, or that the service rejects ("OpenAI does not accept this key. Check it was copied whole, and not revoked."). It saves the key with a warning when:</p>
+      <p>Before saving, Tattle makes a free request to the service with the key (10 s at most). It refuses a key that is empty, has spaces or line breaks, looks cut short, belongs to the other service, or that the service rejects ("OpenAI does not accept this key. Check it was copied whole, and not revoked.", or the same for TypeSafe). It saves the key with a warning when:</p>
       <ul>
         <li>it cannot reach the service ("Could not reach the service to check it (are you online?). It was saved anyway.");</li>
-        <li>an OpenRouter account has no credit yet, or the key has no credit limit;</li>
+        <li>the service answers with another HTTP error ("The service answered HTTP … when checking it. It was saved anyway.");</li>
         <li>an OpenAI key cannot use the transcription models (check the project's model permissions).</li>
       </ul>
-      <p>A working key shows <span class="ui">✓ Key works</span>, and for OpenRouter the limit and what is left. An OpenAI account with no credit cannot be detected in advance: it fails on the first transcription (see <a href="#troubleshooting">Troubleshooting</a>).</p>
+      <p>A working key shows <span class="ui">✓ Key works</span>. A key with no credit cannot be detected in advance: it fails on the first call that needs it (see <a href="#troubleshooting">Troubleshooting</a>).</p>
 
       <h3 id="change-keys">Change or remove a key</h3>
       <p><span class="ui">Tattle → Settings…</span> (<kbd>⌘,</kbd>) opens the <span class="ui">API keys</span> window: one card per key, showing <span class="ui">Saved · …abcd</span> (the last four characters only). Paste a new key and press <span class="ui">Save</span>; it is checked, then used from the next call, with no restart. There is no button to remove a key: delete it from <code>~/Library/Application Support/Tattle/credentials.json</code> (see <a href="#files">Where files live</a>).</p>
@@ -316,8 +317,8 @@ shasum -a 256 Tattle-&lt;version&gt;-arm64.dmg                             # mat
           <tr><td>Microphone</td><td>Your mic. <span class="ui">Built-in microphone</span>, then every other input with its connection (USB, Bluetooth…). Plugged in after launch? It is listed next time the window opens. The last one used is preselected.</td></tr>
           <tr><td>People on the call</td><td><span class="ui">Any number</span>, or <span class="ui">1 on the call</span> to <span class="ui">4 on the call</span>. Voices beyond this count go to the closest speaker instead of becoming new ones. It resets to Any number each time. Your mic always counts one voice.</td></tr>
           <tr><td>Transcript</td><td><span class="ui">Always on</span>: both streams recorded and transcribed live, speakers identified, a timeline, and chat.</td></tr>
-          <tr><td>Fact-check</td><td>System 1 (Jev) flags checkable claims on every line; System 2 (GPT-6 Luna) researches them with sources. On by default when your OpenRouter key is set.</td></tr>
-          <tr><td>Labels</td><td>A label set, or <span class="ui">Off</span>. Jev labels each part of the timeline with its questions. Defaults to the set you used last, or the built-in <span class="ui">AI podcast</span>; Off without an OpenRouter key.</td></tr>
+          <tr><td>Fact-check</td><td>System 1 (Jev) flags checkable claims on every line; System 2 (GPT-6 Luna) researches them with sources. On by default when your TypeSafe key is set. Research also needs the OpenAI key, and Start live asks for it.</td></tr>
+          <tr><td>Labels</td><td>A label set, or <span class="ui">Off</span>. Jev labels each part of the timeline with its questions. Defaults to the set you used last, or the built-in <span class="ui">AI podcast</span>; Off without a TypeSafe key.</td></tr>
           <tr><td>Tonight's stories (optional)</td><td>Shown when a label set is picked: one headline per line (254 at most, 300 characters each). Jev says which story each part of the show is about, and the headlines help OpenAI spell names.</td></tr>
         </tbody>
       </table></div>
@@ -350,7 +351,7 @@ shasum -a 256 Tattle-&lt;version&gt;-arm64.dmg                             # mat
           <tr><td>Clock</td><td>Time since the session started (paused time included).</td></tr>
           <tr><td>Meters</td><td><strong>Host</strong> (your mic, light blue) and <strong>Remote</strong> (the call, pink): the device, a level bar from −60 to 0 dBFS, and the level and delay, or <span class="ui">waiting…</span>, <span class="ui">paused</span>, <span class="ui">muted · call playing</span>, <span class="ui">silent N s</span>. A meter turns <strong>red</strong> when its stream stays at or below −50 dBFS for more than 10 s, or sends nothing for more than 3 s.</td></tr>
           <tr><td>Speakers chip</td><td>Speaker mode is on (see <a href="#speaker-mode">Speaker mode</a>). Hover it for the details.</td></tr>
-          <tr><td>Spend / Cost</td><td><span class="ui">Spend $X</span> on air, <span class="ui">Cost $X</span> for a recording. Hover or focus it for the split: Transcription, Jev, System 2, Chat. It turns red with <span class="ui">OpenRouter stopped</span> if OpenRouter refuses for good (out of credit or over the key's limit).</td></tr>
+          <tr><td>Spend / Cost</td><td><span class="ui">Spend $X</span> on air, <span class="ui">Cost $X</span> for a recording. Hover or focus it for the split: Transcription, Jev, System 2, Chat. It turns red when a provider refuses for good (out of credit or over the key's limit). The hover shows that provider's message.</td></tr>
           <tr><td>Buttons</td><td><span class="ui">Start live</span>, <span class="ui">Pause</span> / <span class="ui">Resume</span>, <span class="ui">Stop</span>, <span class="ui">Export</span> (on a recording), <span class="ui">Import</span> (when nothing is on air), <span class="ui">Chat</span> (a dot pulses while a reply is being written), and the cog.</td></tr>
         </tbody>
       </table></div>
@@ -428,7 +429,7 @@ shasum -a 256 Tattle-&lt;version&gt;-arm64.dmg                             # mat
     <!-- ===================================================== 10 -->
     <section id="fact-checking">
       <h2><em>10</em> <span>Fact-checking</span></h2>
-      <div class="needs"><span class="chip key">OpenRouter key</span><span class="chip cost">Up to about $0.35 an hour</span></div>
+      <div class="needs"><span class="chip key">OpenAI and TypeSafe keys</span><span class="chip cost">Up to about $0.35 an hour</span></div>
       <p>Fact-checking works in two steps, like fast and slow thinking. <strong>System 1</strong> is Jev, a fast decision model from TypeSafe AI: on every line it answers a few typed questions (is it a checkable claim, about the public world, worth checking, is the speaker unsure) in under a second. <strong>System 2</strong> is GPT-6 Luna with web search: it researches only the claims System 1 flags, and returns a verdict with sources within seconds.</p>
       <h3 id="verdicts">The verdicts</h3>
       <div class="tbl"><table>
@@ -498,7 +499,7 @@ shasum -a 256 Tattle-&lt;version&gt;-arm64.dmg                             # mat
     <!-- ===================================================== 14 -->
     <section id="label-sets">
       <h2><em>14</em> <span>Label sets</span></h2>
-      <div class="needs"><span class="chip free">Making one: free</span><span class="chip key">Using one: OpenRouter key</span></div>
+      <div class="needs"><span class="chip free">Making one: free</span><span class="chip key">Using one: TypeSafe key</span></div>
       <p>A label set is what the timeline asks Jev about each segment of a show. Pick one in <span class="ui">Start live</span>. Sets are files on your Mac: making or editing one sends nothing anywhere.</p>
       <div class="tbl"><table>
         <thead><tr><th scope="col">Kind</th><th scope="col">How many</th><th scope="col">What it does</th></tr></thead>
@@ -518,11 +519,11 @@ shasum -a 256 Tattle-&lt;version&gt;-arm64.dmg                             # mat
       <p>The editor has a card per category, score, and marker (<span class="ui">Add category (n of 2)</span>, <span class="ui">Add score (n of 2)</span>, <span class="ui">Add marker (n of 8)</span>), a locked card for where segments end (the same, calibrated question for every set), and "How to write good labels". <span class="ui">Save</span> and <span class="ui">Try on a recording</span> stay disabled until the set is valid. To copy one of your own sets, export it and import it again.</p>
 
       <h3 id="create-with-ai">Create with AI</h3>
-      <div class="needs"><span class="chip key">OpenRouter key</span><span class="chip cost">A few cents</span></div>
+      <div class="needs"><span class="chip key">OpenAI key</span><span class="chip cost">A few cents</span></div>
       <p>GPT-6 Luna drafts a set with you, one question at a time, while the editor on the right fills in. It starts by asking what kind of conversation you will label (<span class="ui">A podcast about a topic</span>, <span class="ui">A sales or customer call</span>, <span class="ui">A team meeting</span>, <span class="ui">A job interview</span>, or your own words), proposes options, levels, wording, thresholds, and icons, and explains anything you ask about. Click a suggested answer or type your own; your edits in the editor win. A checklist tracks what the set still needs (<span class="ui">Still to settle: N</span>, then <span class="ui">Ready: try it on a recording, then save</span>). The cost so far shows as <span class="ui">Spent $X</span>. Nothing is saved until you press <span class="ui">Save</span>; closing the window discards the conversation.</p>
 
       <h3 id="try-a-set">Try on a recording</h3>
-      <div class="needs"><span class="chip key">OpenRouter key</span><span class="chip cost">Shown before you start</span></div>
+      <div class="needs"><span class="chip key">TypeSafe key</span><span class="chip cost">Shown before you start</span></div>
       <p>From the editor or Create with AI: pick a recording, and Jev is asked the draft's questions about each segment that starts in its first 10 minutes (40 at most). The result shows two small timelines, the recording's own labels and the draft's, with the cost. Nothing is saved into the recording. Not available while a session is on air.</p>
 
       <h3 id="share-sets">Share a set</h3>
@@ -535,7 +536,7 @@ shasum -a 256 Tattle-&lt;version&gt;-arm64.dmg                             # mat
     <!-- ===================================================== 15 -->
     <section id="chat">
       <h2><em>15</em> <span>Chat</span></h2>
-      <div class="needs"><span class="chip key">OpenRouter key</span><span class="chip cost">About $0.004 a question with GPT-6 Luna on a 2-hour show</span></div>
+      <div class="needs"><span class="chip key">OpenAI key</span><span class="chip cost">Priced from token counts</span></div>
       <p>Ask questions about the transcript of the show on screen, live or afterwards. Open it with <span class="ui">Chat</span> in the header or <kbd>⌘K</kbd> from anywhere.</p>
       <ul>
         <li>The transcript is attached. On air, each question also brings every line said since the last one, so answers cover the show up to the moment you ask.</li>
@@ -547,27 +548,16 @@ shasum -a 256 Tattle-&lt;version&gt;-arm64.dmg                             # mat
         <li>A meter shows the context used, tokens in and out, and what this chat and the recording cost. Past 80% of the model's context, it suggests a new chat.</li>
       </ul>
       <h3 id="chat-models">Models</h3>
-      <p>Click the model button to pick one. Search by name, and sort by <span class="ui">Suggested</span>, <span class="ui">Cheapest</span>, <span class="ui">Priciest</span>, or <span class="ui">Largest context</span>; the list shows each model's context and prices per million tokens, from OpenRouter. Switching mid-chat sends the whole conversation to the new model with the next question.</p>
+      <p>Click the model button to pick one. Search by name, and sort by <span class="ui">Suggested</span>, <span class="ui">Cheapest</span>, <span class="ui">Priciest</span>, or <span class="ui">Largest context</span>. OpenAI's list does not return prices or context length, so those show as unknown; switching mid-chat sends the whole conversation to the new model with the next question.</p>
       <div class="tbl"><table>
-        <thead><tr><th scope="col">Model</th><th scope="col">OpenRouter id</th></tr></thead>
+        <thead><tr><th scope="col">Model</th><th scope="col">Id</th></tr></thead>
         <tbody>
           <tr><td>GPT-6 Luna (default)</td><td><code>openai/gpt-6-luna</code></td></tr>
           <tr><td>GPT-6 Sol</td><td><code>openai/gpt-6-sol</code></td></tr>
           <tr><td>GPT-6 Astra</td><td><code>openai/gpt-6-astra</code></td></tr>
-          <tr><td>Claude Sonnet 5</td><td><code>anthropic/claude-sonnet-5</code></td></tr>
-          <tr><td>Claude Opus 5.5</td><td><code>anthropic/claude-opus-5.5</code></td></tr>
-          <tr><td>Claude Fable 5.1</td><td><code>anthropic/claude-fable-5.1</code></td></tr>
-          <tr><td>Gemini 3.8 Flash</td><td><code>google/gemini-3.8-flash</code></td></tr>
-          <tr><td>Grok 4.7</td><td><code>x-ai/grok-4.7</code></td></tr>
-          <tr><td>DeepSeek V4.1 Flash</td><td><code>deepseek/deepseek-v4.1-flash</code></td></tr>
-          <tr><td>Kimi K3</td><td><code>moonshotai/kimi-k3</code></td></tr>
-          <tr><td>Qwen3.8 Max Prime</td><td><code>qwen/qwen3.8-max-prime</code></td></tr>
-          <tr><td>GLM 5.3</td><td><code>z-ai/glm-5.3</code></td></tr>
-          <tr><td>Muse Spark 1.3</td><td><code>meta/muse-spark-1.3</code></td></tr>
-          <tr><td>Mistral Large 2512</td><td><code>mistralai/mistral-large-2512</code></td></tr>
         </tbody>
       </table></div>
-      <p>Every call asks providers not to collect your data. If no provider of a model accepts that, pick another model.</p>
+      <p>Another model id can be saved in the API keys window. The three above are the ones configured for Chat.</p>
     </section>
 
     <!-- ===================================================== 16 -->
@@ -584,7 +574,7 @@ shasum -a 256 Tattle-&lt;version&gt;-arm64.dmg                             # mat
       <p>A recording on screen shows <span class="ui">Cost</span> instead of Spend, an <span class="ui">Export</span> button, and no meters. Stop the show on air before opening another recording.</p>
       <h3 id="replay">Replay</h3>
       <div class="needs"><span class="chip cost">About what the show cost</span></div>
-      <p><span class="ui">Replay</span> runs a recording's audio through the whole pipeline again, in real time, as a new recording (the original is untouched). It uses the transcription engine selected now and the label set last picked in Start live, with fact-checking on when an OpenRouter key is set (transcript only otherwise). Results can differ, since the AI models are not deterministic. To look at a show again, <strong>Open</strong> it instead: it is free.</p>
+      <p><span class="ui">Replay</span> runs a recording's audio through the whole pipeline again, in real time, as a new recording (the original is untouched). It uses the transcription engine selected now and the label set last picked in Start live, with fact-checking on when a TypeSafe key is set (transcript only otherwise). Research still needs the OpenAI key. Results can differ, since the AI models are not deterministic. To look at a show again, <strong>Open</strong> it instead: it is free.</p>
     </section>
 
     <!-- ===================================================== 17 -->
@@ -655,7 +645,7 @@ shasum -a 256 Tattle-&lt;version&gt;-arm64.dmg                             # mat
           <tr><td>Try on a recording, Create with AI</td><td>Shown before and as you go; not added to any recording</td></tr>
         </tbody>
       </table></div>
-      <div class="note warn"><span class="note-t">No spending limit in the app</span><p>The app shows what it spends but does not stop. Give your OpenRouter key a credit limit (for example $10) at openrouter.ai/settings/keys, and keep OpenAI on prepaid credit with automatic recharge off.</p></div>
+      <div class="note warn"><span class="note-t">No spending limit in the app</span><p>The app shows what it spends but does not stop. Keep the OpenAI account on prepaid credit with automatic recharge off. TypeSafe bills Jev by the token.</p></div>
     </section>
 
     <!-- ===================================================== 20 -->
@@ -666,15 +656,16 @@ shasum -a 256 Tattle-&lt;version&gt;-arm64.dmg                             # mat
         <thead><tr><th scope="col">What</th><th scope="col">Sent to</th><th scope="col">When</th></tr></thead>
         <tbody>
           <tr><td>The conversation's audio</td><td>OpenAI, with your key</td><td>Only with the OpenAI engine, during a session or replay, never while paused. With Apple Speech, audio never leaves your Mac.</td></tr>
-          <tr><td>Transcript lines</td><td>OpenRouter, with your key</td><td>With fact-checking or labels on (Jev's questions, GPT-6 Luna's research and audits)</td></tr>
-          <tr><td>Your chat questions, with the transcript</td><td>OpenRouter, to the model you pick</td><td>When you ask</td></tr>
-          <tr><td>The first 10 minutes of a transcript; your show description and draft set</td><td>OpenRouter</td><td>Try on a recording; Create with AI</td></tr>
+          <tr><td>Transcript lines</td><td>TypeSafe, with your key, for Jev; OpenAI, with your key, for research and audits</td><td>With fact-checking or labels on</td></tr>
+          <tr><td>Your chat questions, with the transcript</td><td>OpenAI, to the model you pick</td><td>When you ask</td></tr>
+          <tr><td>The first 10 minutes of a transcript</td><td>TypeSafe</td><td>Try on a recording</td></tr>
+          <tr><td>Your show description and draft set</td><td>OpenAI</td><td>Create with AI</td></tr>
           <tr><td>A key being checked</td><td>Its own service</td><td>When you save it</td></tr>
           <tr><td>An update check</td><td>GitHub</td><td>At launch and every 4 hours, never on air</td></tr>
           <tr><td>A fingerprint (32 bytes) of a recording's seal, and of an exported transcript; never its words or audio</td><td>DigiCert, GlobalSign, and FreeTSA</td><td>Only with <a href="#proof">trusted timestamps</a> on (off by default): when a recording ends, and when its transcript is exported</td></tr>
         </tbody>
       </table></div>
-      <p>Calls to OpenRouter ask providers not to collect your data. A transcript-only show on Apple Speech sends nothing anywhere.</p>
+      <p>A transcript-only show on Apple Speech sends nothing anywhere. OpenAI and TypeSafe each see only the calls their key is used for.</p>
       <div class="note live"><span class="note-t">Record with consent</span><p>Tattle records and transcribes everyone on a call. Many places require the consent of everyone recorded, and some require it to be explicit: tell the people on the call, and get their consent, before you record. You are responsible for how you use the app and its recordings.</p></div>
     </section>
 
@@ -779,7 +770,7 @@ shasum -a 256 Tattle-&lt;version&gt;-arm64.dmg                             # mat
         <li>Everyone wears headphones; the host wears <strong>earbuds</strong>. On the Mac's speakers, speaker mode drops whatever the host says over a guest.</li>
         <li>In your call app, pick the Mac's built-in microphone: AirPods switch to a low-quality call mode when an app opens their mic.</li>
         <li>Turn on a Focus mode: Tattle records every sound the Mac plays, notifications included.</li>
-        <li>Your OpenRouter key has a credit limit.</li>
+        <li>Your TypeSafe key is set if you want fact-checking or labels, and your OpenAI key is set if you want research, Chat, or Create with AI.</li>
         <li>The label set is picked and tonight's stories are typed in.</li>
         <li>Rename speakers as they first speak, and merge duplicates.</li>
         <li>Screen-sharing the app to your audience? It is laid out to fit 1280 × 720.</li>
@@ -814,7 +805,7 @@ shasum -a 256 Tattle-&lt;version&gt;-arm64.dmg                             # mat
       <h3 id="ts-start-disabled">Start live is greyed out</h3>
       <p>On Apple Speech, the speech model is still downloading (<span class="ui">Getting on-device speech recognition ready… N %</span>): Start is available as soon as it is. If it says <span class="ui">On-device speech recognition is not ready</span>, press <span class="ui">Try again</span>, or switch to OpenAI in cog → <span class="ui">Transcription</span>.</p>
       <h3 id="ts-openrouter">Fact-checks, labels, or Chat stop</h3>
-      <p>The header's spend reads <span class="ui">OpenRouter stopped</span>, or Chat says the credits or the key's limit are exhausted (402): add credit, or raise the key's limit, at openrouter.ai. A model that is rate-limited (429) or whose providers all refuse the privacy setting: pick another model.</p>
+      <p>The header's spend turns red and the hover names the provider (402: out of credit, or over the key's limit). For OpenAI, add credit at <a href="https://platform.openai.com">platform.openai.com</a>. For TypeSafe, check the key at <a href="https://console.typesafe.ai/keys">console.typesafe.ai/keys</a>. A model that is rate-limited (429): wait, or pick another model.</p>
       <h3 id="ts-reopen">The app did not reopen after an update</h3>
       <p>That happens once, on the update that renamed Conversation Assistant to Tattle: open <strong>Tattle</strong> from Applications. Your keys and recordings are there.</p>
       <h3 id="ts-import">An import fails</h3>
@@ -826,7 +817,7 @@ shasum -a 256 Tattle-&lt;version&gt;-arm64.dmg                             # mat
       <h3 id="ts-mic-off">"The microphone is turned off for Tattle" at every launch</h3>
       <p>Click <span class="ui">Open System Settings</span>, turn on Tattle under Microphone, then quit and reopen Tattle.</p>
       <h3 id="ts-key">A key is refused</h3>
-      <p>Copy it again, whole, into the right field (OpenRouter keys start with <code>sk-or-</code>, OpenAI keys with <code>sk-</code>). If the service rejects it, check it was not revoked, deleted, or disabled.</p>
+      <p>Copy it again, whole, into the right field. A TypeSafe key pasted into the OpenAI field (or the other way around) is refused. If the service rejects it, check it was not revoked, deleted, or disabled.</p>
       <p>Anything else: Insights → Log lists the last 30 errors, and <a href="#help">Help</a> says where to ask.</p>
     </section>
 
@@ -886,7 +877,7 @@ npm run serve            # http://127.0.0.1:4317</code></pre>
         <li><strong>Licence</strong>: Tattle is free and open-source software under the <a href="https://github.com/nicolasdao/tattle/blob/master/LICENSE">BSD 3-Clause License</a>, © 2026 Cloudless Consulting Pty Ltd. The components it includes, and their licences, are under Help → Licenses and Acknowledgements and in <a href="https://github.com/nicolasdao/tattle/blob/master/THIRD_PARTY_NOTICES.md">THIRD_PARTY_NOTICES.md</a>.</li>
         <li><strong>Made by</strong> <a href="https://nicolasdao.com">Nicolas Dao</a> at <a href="https://cloudlesslabs.com">Cloudless Labs</a>, in Sydney. Follow him on <a href="https://www.youtube.com/@nicolasdao">YouTube</a> and <a href="https://x.com/realnicdao">X</a>, and watch <a href="https://www.youtube.com/@theMadKoo">MadKoo</a>, the podcast where Tattle was first demoed.</li>
       </ul>
-      <p>Tattle is an independent project, not affiliated with, sponsored, or endorsed by Apple, OpenAI, OpenRouter, or TypeSafe AI.</p>
+      <p>Tattle is an independent project, not affiliated with, sponsored, or endorsed by Apple, OpenAI, or TypeSafe AI.</p>
       <a class="top-link" href="#start">Back to the top ↑</a>
     </section>
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Budget, BudgetExhaustedError, type CostTotals } from "../src/budget.ts";
 
-// The ledger sets no dollar cap since 29 September 2026: it refuses only after OpenRouter's non-transient 402 (`exhaust`).
+// The ledger sets no dollar cap since 29 September 2026: it refuses only after a provider's non-transient 402 (`exhaust`).
 describe("Budget", () => {
   it("totals(): every bucket, and the session total over all four (chat included)", () => {
     const b = new Budget();

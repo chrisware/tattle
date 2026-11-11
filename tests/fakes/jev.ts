@@ -1,4 +1,4 @@
-import { DECISIONS_URL } from "../../src/jev/client.ts";
+import { SYSTEMONE_URL } from "../../src/jev/client.ts";
 import { json, timeoutError } from "./responses.ts";
 
 export type Responder = (req: { body: any; init: RequestInit }) => Response | Promise<Response>;
@@ -25,7 +25,7 @@ export class FakeJev {
   constructor(queue: Responder[] = [], private readonly fallback?: Responder) { this.queue = [...queue]; }
   push(...r: Responder[]): this { this.queue.push(...r); return this; }
   readonly fetch = (async (url: string | URL, init: RequestInit = {}) => {
-    if (String(url) !== DECISIONS_URL) throw new Error(`FakeJev: unexpected URL ${url}`);
+    if (String(url) !== SYSTEMONE_URL) throw new Error(`FakeJev: unexpected URL ${url}`);
     const body = JSON.parse(String(init.body));
     this.requests.push({ url: String(url), body, init });
     const r = this.queue.shift() ?? this.fallback;

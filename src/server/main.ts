@@ -28,7 +28,7 @@ import { requestTimestamps } from "../store/timestamp.ts";
 import { exportTranscript, transcriptFileName } from "../store/transcript.ts";
 import { appInfo } from "../version.ts";
 import { KeyError, KeySetup, KeyStore, type KeyName } from "../keys.ts";
-import { SettingsStore, TranscriptionSettings, type TranscriptionStatus } from "../settings.ts";
+import { SettingsStore, TranscriptionSettings, type ModelChoices, type TranscriptionStatus } from "../settings.ts";
 import { appPaths, migrateAppSupportDir } from "../paths.ts";
 import { licenses } from "../licenses.ts";
 import { isMain } from "../entry.ts";
@@ -68,8 +68,8 @@ export class ApiError extends Error {
   }
 }
 
-/** Fact-checking and labels ask Jev and GPT-6 Luna, through OpenRouter: the only features that need its key. */
-const OPENROUTER_MESSAGE = "Please provide your OpenRouter API key to configure fact-checking or labeling.";
+/** Fact-checking and labels ask Jev through TypeSafe: the only features that need its key. */
+const TYPESAFE_MESSAGE = "Please provide your TypeSafe API key to configure fact-checking or labeling.";
 
 /** The label-set library, as the routes see it (see docs/jev.md § label sets). None of it needs an API key. */
 export interface LabelSetApi {
@@ -84,9 +84,9 @@ export interface LabelSetApi {
   importFile(body: unknown): LabelSet;
   /** Validation and the cost estimate of a draft, for the editor's footer. */
   estimate(body: unknown): ReturnType<typeof checkDraft>;
-  /** Try on a recording: Jev asked the draft about its first minutes. Needs the OpenRouter key; writes nothing there. */
+  /** Try on a recording: Jev asked the draft about its first minutes. Needs the TypeSafe key; writes nothing there. */
   tryOn(body: unknown): Promise<unknown>;
-  /** Create with AI: one turn of the interview with `labelsAssist.model`, which drafts a set. Needs the OpenRouter key. */
+  /** Create with AI: one turn of the interview with `labelsAssist.model`, which drafts a set. Needs the OpenAI key. */
   assist(body: unknown): Promise<unknown>;
 }
 
@@ -174,8 +174,13 @@ export interface EngineApi {
   transfer?: TransferApi;
   /** Absent: the transcription routes answer 501. */
   transcription?: TranscriptionApi;
-  /** Whether the OpenRouter key is set (the chat checks it before calling OpenRouter). */
-  openrouterKeySet?(): boolean;
+  /** Whether the OpenAI key is set (chat and label drafting check it before calling). */
+  openaiKeySet?(): boolean;
+  /** Whether the TypeSafe key is set (fact-checking and labels check it before calling Jev). */
+  typesafeKeySet?(): boolean;
+  /** Absent: the model routes answer 501. */
+  modelChoices?(): { models: string[]; saved: ModelChoices; effective: Required<ModelChoices> };
+  saveModelChoices?(body: unknown): { models: string[]; saved: ModelChoices; effective: Required<ModelChoices> };
   /** Absent: the label-set routes answer 501. */
   labelSetApi?: LabelSetApi;
 }
@@ -207,7 +212,8 @@ export interface EngineOptions {
   devices?: () => Promise<unknown[]>;
   /** The chat window's network access (tests pass a fake). */
   fetch?: typeof fetch;
-  openrouterKey?: string;
+  openaiKey?: string;
+  typesafeKey?: string;
   /** The engine setting; without it, sessions transcribe with OpenAI. */
   transcription?: TranscriptionSettings;
   /** The label-set library; by default the built-in sets and the user's folder (src/paths.ts). */
@@ -238,9 +244,14 @@ export class Engine implements EngineApi {
     this.chat = new ChatService(this.config.app.chat, {
       fetch: (...a) => (opts.fetch ?? fetch)(...a),
       // read on each call: a key saved from the setup page applies at once
-      get apiKey() { return opts.openrouterKey ?? process.env.OPENROUTER_API_KEY ?? ""; },
+      get apiKey() { return opts.openaiKey ?? opts.session?.keys?.openai ?? process.env.OPENAI_API_KEY ?? ""; },
       source: () => this.chatSource(),
       onSpend: (src) => this.chatSpent(src),
+      modelChoice: () => this.settings.read().models?.chat,
+      extraModels: () => {
+        const id = this.settings.read().models?.chat?.trim();
+        return id ? [id] : [];
+      },
     });
   }
 
@@ -414,12 +425,48 @@ export class Engine implements EngineApi {
     return this.session;
   }
 
-  openrouterKeySet(): boolean {
-    return !!(this.opts.openrouterKey ?? this.opts.session?.keys?.openrouter ?? process.env.OPENROUTER_API_KEY ?? "").trim();
+  openaiKeySet(): boolean {
+    return !!(this.opts.openaiKey ?? this.opts.session?.keys?.openai ?? process.env.OPENAI_API_KEY ?? "").trim();
   }
 
-  private openaiKeySet(): boolean {
-    return !!(this.opts.session?.keys?.openai ?? process.env.OPENAI_API_KEY ?? "").trim();
+  typesafeKeySet(): boolean {
+    return !!(this.opts.typesafeKey ?? this.opts.session?.keys?.typesafe ?? process.env.TYPESAFE_API_KEY ?? "").trim();
+  }
+
+
+  modelChoices(): { models: string[]; saved: ModelChoices; effective: Required<ModelChoices> } {
+    const saved = this.settings.read().models ?? {};
+    const configured = this.config.app.chat.models.filter((id) => id.startsWith("openai/"));
+    const custom = [saved.chat, saved.labels, saved.s2].filter((id): id is string => !!id && !configured.includes(id) && /^[A-Za-z0-9_.:/-]{1,128}$/.test(id));
+    const models = [...new Set([...configured, ...custom])];
+    const pick = (job: keyof ModelChoices, fallback: string) => {
+      const id = saved[job];
+      if (id && models.includes(id)) return id;
+      if (models.includes(fallback)) return fallback;
+      return models[0] ?? fallback;
+    };
+    return {
+      models,
+      saved,
+      effective: {
+        chat: pick("chat", this.config.app.chat.defaultModel),
+        labels: pick("labels", this.config.app.labelsAssist.model),
+        s2: pick("s2", this.config.app.s2.model),
+      },
+    };
+  }
+
+  saveModelChoices(body: unknown): { models: string[]; saved: ModelChoices; effective: Required<ModelChoices> } {
+    const b = (body ?? {}) as Record<string, unknown>;
+    const patch: ModelChoices = {};
+    for (const job of ["chat", "labels", "s2"] as const) {
+      if (!(job in b)) continue;
+      const id = typeof b[job] === "string" ? b[job].trim() : "";
+      if (id && !/^[A-Za-z0-9_.:/-]{1,128}$/.test(id)) throw new ApiError(400, `${job} model id is not valid`);
+      patch[job] = id;
+    }
+    this.settings.save({ models: patch });
+    return this.modelChoices();
   }
 
   private get engineChoice(): TranscriptionEngine {
@@ -584,8 +631,11 @@ export class Engine implements EngineApi {
     // what this session needs before anything starts: the keys its features and engine use, and Apple's model
     const engine = this.engineChoice;
     const realServices = !this.opts.session?.services; // tests inject services, which need no key
-    if (realServices && (features.factcheck !== false || features.labels) && !this.openrouterKeySet()) {
-      throw new ApiError(400, OPENROUTER_MESSAGE, { needsKey: "openrouter" as KeyName });
+    if (realServices && (features.factcheck !== false || features.labels) && !this.typesafeKeySet()) {
+      throw new ApiError(400, TYPESAFE_MESSAGE, { needsKey: "typesafe" as KeyName });
+    }
+    if (realServices && features.factcheck !== false && !this.openaiKeySet()) {
+      throw new ApiError(400, "Fact-checking research needs an OpenAI API key.", { needsKey: "openai" as KeyName });
     }
     if (realServices && engine === "openai" && !this.openaiKeySet()) throw new ApiError(400, "Transcribing with OpenAI needs an OpenAI API key.", { needsKey: "openai" as KeyName });
     if (engine === "apple" && !this.opts.transcription!.ready) {
@@ -619,12 +669,19 @@ export class Engine implements EngineApi {
     }
     this.archived = null;
     this.bus.reset();
+    const config = structuredClone(this.config);
+    const s2Model = this.settings.read().models?.s2;
+    if (s2Model) config.app.s2.model = s2Model;
     this.session = new Session({
-      mode, sources, config: structuredClone(this.config), bus: this.bus, sessionsDir: this.opts.sessionsDir,
+      mode, sources, config, bus: this.bus, sessionsDir: this.opts.sessionsDir,
       healthDetail: () => this.captureDetail, liveText, features, engine, labelSet, stories,
       // how many people are on the call (the remote stream); 0 means no limit
       ...(Number.isInteger(req.voices) && req.voices! >= 0 ? { voices: { remote: req.voices } } : {}),
       ...this.opts.session,
+      keys: {
+        ...this.opts.session?.keys,
+        ...(this.opts.typesafeKey ? { typesafe: this.opts.typesafeKey } : {}),
+      },
     });
     const s = this.session;
     // When it ends, the session becomes a recording: the page shows it exactly as a reopened one.
@@ -663,7 +720,7 @@ export class Engine implements EngineApi {
   private readonly assistSpent = new Map<string, number>();
 
   private async assist(body: unknown) {
-    if (!this.openrouterKeySet()) throw new ApiError(400, "Please provide your OpenRouter API key to create labels with AI.", { needsKey: "openrouter" });
+    if (!this.openaiKeySet()) throw new ApiError(400, "Please provide your OpenAI API key to create labels with AI.", { needsKey: "openai" });
     const b = (body ?? {}) as { conversationId?: unknown; messages?: unknown; draft?: unknown; skipped?: unknown };
     const conversation = typeof b.conversationId === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(b.conversationId) ? b.conversationId : null;
     if (!conversation) throw new ApiError(400, "conversationId is required");
@@ -677,9 +734,10 @@ export class Engine implements EngineApi {
     const draft = b.draft && typeof b.draft === "object" ? (() => { const { builtIn: _b, ...d } = asDraft(b.draft); return d; })() : null;
     const log = join(this.library.root, "label-assist.jsonl");
     const budget = new Budget();
-    const assistant = new LabelsAssistant(cfg.labelsAssist, {
+    const labelsModel = this.settings.read().models?.labels;
+    const assistant = new LabelsAssistant(labelsModel ? { ...cfg.labelsAssist, model: labelsModel } : cfg.labelsAssist, {
       fetch: (...a) => (this.opts.session?.fetch ?? this.opts.fetch ?? fetch)(...a),
-      apiKey: (this.opts.openrouterKey ?? this.opts.session?.keys?.openrouter ?? process.env.OPENROUTER_API_KEY ?? "").trim(),
+      apiKey: (this.opts.openaiKey ?? this.opts.session?.keys?.openai ?? process.env.OPENAI_API_KEY ?? "").trim(),
       budget, log: (r) => appendFileSync(log, JSON.stringify(r) + "\n"),
     });
     try {
@@ -703,7 +761,7 @@ export class Engine implements EngineApi {
    * never into the recording's folder.
    */
   private async tryOn(body: unknown) {
-    if (!this.openrouterKeySet()) throw new ApiError(400, "Please provide your OpenRouter API key to try a label set on a recording.", { needsKey: "openrouter" });
+    if (!this.typesafeKeySet()) throw new ApiError(400, "Please provide your TypeSafe API key to try a label set on a recording.", { needsKey: "typesafe" });
     if (this.session && this.session.status !== "ended") throw new ApiError(409, "a session is on air: try a label set after it ends");
     const b = (body ?? {}) as { set?: unknown; sessionId?: unknown; minutes?: unknown };
     const checked = checkLabelSet(asDraft(b.set));
@@ -724,7 +782,7 @@ export class Engine implements EngineApi {
     const budget = new Budget();
     const jev = new JevClient(cfg.jev, {
       fetch: (...a) => (this.opts.session?.fetch ?? this.opts.fetch ?? fetch)(...a),
-      apiKey: (this.opts.openrouterKey ?? this.opts.session?.keys?.openrouter ?? process.env.OPENROUTER_API_KEY ?? "").trim(),
+      apiKey: (this.opts.typesafeKey ?? this.opts.session?.keys?.typesafe ?? process.env.TYPESAFE_API_KEY ?? "").trim(),
       budget, log: (r) => appendFileSync(log, JSON.stringify({ ...r, session_id: id }) + "\n"),
     });
     try {
@@ -1052,12 +1110,20 @@ export function createApiServer(engine: EngineApi, opts: { webRoot?: string; set
       if ((m === "GET" || m === "HEAD") && mm) return serveMixedAudio(engine.sessionDir(decodeURIComponent(mm[1])), req, res);
       mm = path.match(/^\/api\/sessions\/([^/]+)\/open$/);
       if (m === "POST" && mm) return send(res, 200, engine.openSession(decodeURIComponent(mm[1])));
+      if (m === "GET" && path === "/api/models") {
+        if (!engine.modelChoices) throw new ApiError(501, "model choice is not available");
+        return send(res, 200, engine.modelChoices());
+      }
+      if (m === "PUT" && path === "/api/models") {
+        if (!engine.saveModelChoices) throw new ApiError(501, "model choice is not available");
+        return send(res, 200, engine.saveModelChoices(await readJson(req)));
+      }
       if (path === "/api/chat/models" || path.startsWith("/api/chats")) {
         const chat = engine.chat;
         if (!chat) throw new ApiError(501, "chat is not available");
-        // asking needs OpenRouter: say which key is missing before calling it (reading past chats does not)
-        if (m === "POST" && engine.openrouterKeySet && !engine.openrouterKeySet()) {
-          throw new ApiError(400, "Please provide your OpenRouter API key to use Chat.", { needsKey: "openrouter" });
+        // asking needs OpenAI: say which key is missing before calling it (reading past chats does not)
+        if (m === "POST" && engine.openaiKeySet && !engine.openaiKeySet()) {
+          throw new ApiError(400, "Please provide your OpenAI API key to use Chat.", { needsKey: "openai" });
         }
         if (m === "GET" && path === "/api/chat/models") return send(res, 200, await chat.models());
         if (m === "GET" && path === "/api/chats") return send(res, 200, chat.list());
@@ -1161,7 +1227,7 @@ export function bootEngine() {
   const setup = new KeySetup(keys, {
     fetch: (...a) => fetch(...a),
     models: [config.app.transcription.model, ...(config.app.transcription.live?.enabled ? [config.app.transcription.live.model] : [])],
-    // only the engine's key is required: OpenRouter is asked for when a feature or the chat needs it
+    // only the engine's key is required at launch: TypeSafe and OpenAI are asked for when a feature or Chat needs them
     required: () => (transcription.engine === "openai" ? ["openai"] : []),
   });
   engine = new Engine({
@@ -1183,14 +1249,14 @@ async function main() {
   const { keys, config, engine, transcription, ready, server } = bootEngine();
   await ready;
   const port = Number(values.port ?? config.app.server.port);
-  // what is missing for this engine; a replay also runs fact-checking and labels, which need OpenRouter
+  // what is missing for this engine; a replay also runs fact-checking and labels, which need TypeSafe
   const missing = (extra: KeyName[] = []) => keys.missing().filter((k) => (transcription.engine === "openai" && k === "openai") || extra.includes(k));
   server.listen(port, "127.0.0.1", () => {
     console.log(`Tattle on http://127.0.0.1:${port} (transcription: ${transcription.engine === "apple" ? "on this Mac, Apple Speech" : "OpenAI"})`);
     if (missing().length) console.log(`API key missing (${missing().join(", ")}): open the page above to add it`);
   });
-  if (values.replay && missing(["openrouter"]).length) {
-    console.error(`--replay needs ${missing(["openrouter"]).join(" and ")} (fact-checking and labels run): open the page to add them, then start the replay from there`);
+  if (values.replay && missing(["typesafe"]).length) {
+    console.error(`--replay needs ${missing(["typesafe"]).join(" and ")} (fact-checking and labels run): open the page to add them, then start the replay from there`);
   } else if (values.replay) {
     const { sessionId } = await engine.start({ mode: "replay", dir: values.replay, speed: values.speed === "max" ? "max" : 1 });
     console.log(`replaying ${values.replay} at speed ${values.speed} as session ${sessionId}`);

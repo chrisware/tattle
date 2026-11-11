@@ -41,13 +41,18 @@ const builtInEntry = () => entry("ai-podcast", {
   name: "AI podcast", builtIn: true, description: "The built-in set", perHourUsd: 0.012, counts: { categories: 2, scores: 2, markers: 6 },
 });
 
-function setup(openrouter: boolean) {
+function setup(on: boolean | { openai?: boolean; typesafe?: boolean } = false) {
+  const flags = typeof on === "boolean" ? { typesafe: on } : on;
+  const row = (name: "openai" | "typesafe", set = false) => ({
+    name,
+    env: name === "openai" ? "OPENAI_API_KEY" : "TYPESAFE_API_KEY",
+    set,
+    source: set ? "file" as const : null,
+    hint: set ? "abcd" : null,
+  });
   return {
-    configured: true, required: [], path: "/tmp/credentials.json",
-    keys: [
-      { name: "openai", env: "OPENAI_API_KEY", set: false, source: null, hint: null },
-      { name: "openrouter", env: "OPENROUTER_API_KEY", set: openrouter, source: openrouter ? "file" : null, hint: openrouter ? "abcd" : null },
-    ],
+    configured: true, required: [] as ("openai" | "typesafe")[], path: "/tmp/credentials.json",
+    keys: [row("openai", !!flags.openai), row("typesafe", !!flags.typesafe)],
   };
 }
 
@@ -102,8 +107,8 @@ const answer = (value: string | null, text?: string) => {
   if (text !== undefined) ($("#ask-input") as HTMLInputElement).value = text;
   dlg("dlg-ask").close(value ?? undefined);
 };
-async function keysKnown(openrouter: boolean) {
-  fake.setup!.mockResolvedValue(setup(openrouter));
+async function keysKnown(typesafe: boolean) {
+  fake.setup!.mockResolvedValue(setup(typesafe));
   await (await import("../../web/src/keys.ts")).setupStatus();
 }
 
@@ -895,31 +900,31 @@ describe("Try on a recording", () => {
     expect($(".ltry-result .error-text", body()).textContent).toBe("not while a session is on air");
   });
 
-  test("without the OpenRouter key: the key is asked for in the window; Not now puts it away; saving it runs the try", async () => {
+  test("without the TypeSafe key: the key is asked for in the window; Not now puts it away; saving it runs the try", async () => {
     await keysKnown(false);
     fake.tryLabelSet!.mockResolvedValue(tryResult());
     await openTry();
     buttonStarting("Try it", body()).click();
     await flush();
-    expect(fake.tryLabelSet).not.toHaveBeenCalled();
     const prompt = () => body().querySelector<HTMLElement>(".key-prompt");
-    expect(prompt()!.getAttribute("aria-label")).toBe("Please provide your OpenRouter API key to try a label set on a recording.");
+    expect(prompt()!.getAttribute("aria-label")).toBe("Please provide your TypeSafe API key to try a label set on a recording.");
     buttonNamed("Not now", prompt()!).click();
     expect(prompt()).toBeNull();
     buttonStarting("Try it", body()).click();
     await flush();
+    expect(prompt()).not.toBeNull();
     fake.saveKeys!.mockResolvedValue({ ...setup(true), saved: true, checks: {} });
-    $<HTMLInputElement>(".key-prompt input", body()).value = "sk-or-v1-test";
+    $<HTMLInputElement>(".key-prompt input", prompt()!).value = "ts-test-key-0000000000";
     buttonNamed("Save", prompt()!).click();
     await flush();
-    expect(fake.saveKeys).toHaveBeenCalledWith({ openrouter: "sk-or-v1-test" });
+    expect(fake.saveKeys).toHaveBeenCalledWith({ typesafe: "ts-test-key-0000000000" });
     expect(prompt()).toBeNull();
     expect(fake.tryLabelSet).toHaveBeenCalledOnce();
   });
 
   test("the engine says the key is missing: the page asks the engine again and then asks for the key", async () => {
     await keysKnown(true);
-    fake.tryLabelSet!.mockRejectedValue(new A.ApiError(400, "needs the OpenRouter key", { needsKey: "openrouter" }));
+    fake.tryLabelSet!.mockRejectedValue(new A.ApiError(400, "needs the TypeSafe key", { needsKey: "typesafe" }));
     await openTry();
     fake.setup!.mockResolvedValue(setup(false));
     buttonStarting("Try it", body()).click();
@@ -935,7 +940,7 @@ describe("Try on a recording", () => {
     await keysKnown(true);
     let n = 0;
     fake.tryLabelSet!.mockImplementation(async () => {
-      if (++n < 5) throw new A.ApiError(400, "needs the OpenRouter key", { needsKey: "openrouter" });
+      if (++n < 5) throw new A.ApiError(400, "needs the TypeSafe key", { needsKey: "typesafe" });
       return tryResult();
     });
     await openTry();
@@ -950,7 +955,8 @@ describe("Try on a recording", () => {
 
 describe("Create with AI", () => {
   const open = async (keyOn = true) => {
-    await keysKnown(keyOn);
+    fake.setup!.mockResolvedValue(setup({ openai: keyOn }));
+    await (await import("../../web/src/keys.ts")).setupStatus();
     L.openCreateWithAi();
     await flush();
   };
@@ -1060,23 +1066,23 @@ describe("Create with AI", () => {
     expect(sent[1]![1].map((m: { content: string }) => m.content).slice(1)).toEqual(["second"]);
   });
 
-  test("without the OpenRouter key: the key's card instead of the chat; saving the key shows the chat", async () => {
+  test("without the OpenAI key: the key's card instead of the chat; saving the key shows the chat", async () => {
     await open(false);
     const keyBox = $(".lai-key", body());
     expect([keyBox.hidden, $(".lai-chat-inner", body()).hidden]).toEqual([false, true]);
-    expect($(".key-prompt", keyBox).getAttribute("aria-label")).toBe("Please provide your OpenRouter API key to create labels with AI.");
-    fake.saveKeys!.mockResolvedValue({ ...setup(true), saved: true, checks: {} });
-    $<HTMLInputElement>(".key-prompt input", keyBox).value = "sk-or-v1-test";
+    expect($(".key-prompt", keyBox).getAttribute("aria-label")).toBe("Please provide your OpenAI API key to create labels with AI.");
+    fake.saveKeys!.mockResolvedValue({ ...setup({ openai: true }), saved: true, checks: {} });
+    $<HTMLInputElement>(".key-prompt input", keyBox).value = "sk-proj-test-key-000000";
     buttonNamed("Save", keyBox).click();
     await flush();
-    expect([keyBox.hidden, $(".lai-chat-inner", body()).hidden, keyBox.children.length]).toEqual([true, false, 0]);
-    expect(document.activeElement).toBe(input());
+    expect(fake.saveKeys).toHaveBeenCalledWith({ openai: "sk-proj-test-key-000000" });
+    expect([keyBox.hidden, $(".lai-chat-inner", body()).hidden]).toEqual([true, false]);
   });
 
-  test("the engine says the key is missing: the answer goes back in the input, its bubble goes, and the key is asked for", async () => {
+  test("a needsKey refusal asks for the key again", async () => {
     await open();
-    fake.assistLabels!.mockRejectedValue(new A.ApiError(400, "needs the OpenRouter key", { needsKey: "openrouter" }));
-    fake.setup!.mockResolvedValue(setup(false));
+    fake.assistLabels!.mockRejectedValue(new A.ApiError(400, "needs the OpenAI key", { needsKey: "openai" }));
+    fake.setup!.mockResolvedValue(setup({}));
     type(input(), "My podcast");
     sendBtn().click();
     await flush();

@@ -13,7 +13,7 @@ The fact-checker borrows Kahneman's two systems of thinking:
 
 | | System 1 | System 2 |
 | --- | --- | --- |
-| Is | [Jev](jev.md), plus a set of questions and thresholds | GPT-6 Luna (`openai/gpt-6-luna`) through OpenRouter, with web search |
+| Is | [Jev](jev.md), plus a set of questions and thresholds | GPT-6 Luna through an OpenAI-compatible endpoint (`OPENAI_API_KEY`). Research on api.openai.com uses the Responses API with `web_search`. Audit and rewrite use chat completions. Jev stays on TypeSafe. |
 | Runs | On every utterance, inside the per-utterance request | Only when System 1 flags a claim, every 5 minutes for an audit, and when evidence triggers a rewrite |
 | Speed and cost | ~0.4–0.8 s, ~$0.00004 per utterance | ~6–16 s and ~$0.008 per researched claim |
 | Output | Typed judgments: is this a checkable claim, what kind, how much it matters, is it a repeat | A verdict with sources; audit findings; proposed rewrites of System 1's questions |
@@ -108,7 +108,7 @@ A **System 1 version** is the question set plus its three thresholds, with `id` 
 
 ## System 2
 
-All System 2 calls go through `S2Client` in `src/factcheck/s2.ts`: OpenRouter chat completions, `model: openai/gpt-6-luna`, `provider: { order: ["openai"], allow_fallbacks: false, require_parameters: true, data_collection: "deny" }`, a strict `json_schema` response format, no `temperature` or `top_p`, and no function calling. Each call uses a 90 s timeout and at most 2 attempts with the same retry classification as the [Jev client](jev.md). Every call is logged to `s2_calls.jsonl` with purpose, latency, attempts, returned model and provider, token usage (including reasoning and cached tokens), and `cost_usd`.
+All System 2 calls go through `S2Client` in `src/factcheck/s2.ts`. Research on `api.openai.com` posts to `/v1/responses` with `tools: [{ type: "web_search" }]`, `reasoning: { effort }`, and a strict `text.format` schema. Audit and rewrite post to `/v1/chat/completions` with `reasoning_effort` and a strict `response_format`, and they do not search. The model id drops the `openai/` prefix on that host. `OPENAI_BASE_URL` points the same client at another compatible endpoint; web search stays off there unless `S2_WEB=responses`. Each call uses a 90 s timeout and at most 2 attempts with the same retry classification as the [Jev client](jev.md). A missing `usage.cost` is logged as zero, because the Responses API bills in tokens. Every call is logged to `s2_calls.jsonl` with purpose, latency, attempts, returned model and provider, token usage (including reasoning and cached tokens), and `cost_usd`.
 
 System prompts are byte-identical across calls (the research prompt changes only with the date), so their tokens can be served from the provider's prompt cache ($0.01 instead of $0.10 per million input tokens).
 
@@ -121,7 +121,7 @@ System prompts are byte-identical across calls (the research prompt changes only
 
 ### Research
 
-The request adds `plugins: [{ id: "web", engine: "exa", max_results: 5 }]` and `reasoning: { effort: "medium" }`. The system message:
+On the official host the research request sends `tools: [{ type: "web_search" }]` and `reasoning: { effort: "medium" }`. A compatible base that is not `api.openai.com` sends no web tool. The configured `web.engine` is not sent: OpenAI's tool has no engine knob. The system message:
 
 > You fact-check one spoken claim from a live English-language AI podcast. Today is <date>. Your own knowledge ends in May 2026, so rely on the web results for anything after that, and never call something false only because you have not heard of it. Judge the claim as a listener would understand it. Verdicts:
 > - supported: accurate.

@@ -1,6 +1,6 @@
-// Pre-show checks (§4.16): models, capture helper and permissions, the transcription engine, keys, config, OpenRouter
-// credit, one live call per service (about $0.02 with OpenAI and OpenRouter; nothing with Apple Speech and no OpenRouter
-// key), and free disk. npm run preflight
+// Pre-show checks (§4.16): models, capture helper and permissions, the transcription engine, keys, config,
+// one live call per configured service (transcription; Jev when TYPESAFE_API_KEY is set; System 2 when
+// OPENAI_API_KEY is set), and free disk. npm run preflight
 import { execFile, spawn } from "node:child_process";
 import { existsSync, statfsSync } from "node:fs";
 import { promisify } from "node:util";
@@ -57,7 +57,7 @@ const apple = await appleSpeechStatus();
 const engine: TranscriptionEngine = resolveEngine({
   saved: new SettingsStore().read().transcriptionEngine, openaiKeySet: !keys.missing().includes("openai"), apple,
 }).engine;
-const hasOpenRouter = !keys.missing().includes("openrouter");
+const hasTypeSafe = !keys.missing().includes("typesafe");
 
 await check("transcription engine", async () => {
   if (engine === "openai") return "OpenAI (Settings → Transcription)";
@@ -72,7 +72,7 @@ await check("keys are set", async () => {
     throw new Error("missing: OPENAI_API_KEY, which OpenAI transcription needs (run npm run serve and add it on the page, or set it in .env)");
   }
   const set = keys.status().filter((k) => k.set).map(where);
-  const optional = hasOpenRouter ? "" : "; no OpenRouter key: fact-checking, labels, and Chat ask for it when turned on";
+  const optional = `${hasTypeSafe ? "" : "; no TypeSafe key: fact-checking and labels ask for it when turned on"}${keys.missing().includes("openai") ? "; no OpenAI key: Chat, label drafting, and fact-check research ask for it when opened" : ""}`;
   return `${set.length ? set.join(", ") : "none needed"}${optional}`;
 });
 
@@ -82,23 +82,12 @@ await check("config is valid", async () => {
   return `app, labels, and ${cfg.s1.id}`;
 });
 
-if (hasOpenRouter) await check("OpenRouter key limit and remaining credit", async () => {
-  const res = await fetch("https://openrouter.ai/api/v1/key", {
-    headers: { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}` }, signal: AbortSignal.timeout(10_000),
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const d = (await res.json()).data ?? {};
-  const remaining = d.limit_remaining;
-  const detail = `limit ${d.limit === null ? "none" : `$${d.limit}`}, remaining ${remaining === null || remaining === undefined ? "n/a" : `$${Number(remaining).toFixed(2)}`}, used $${Number(d.usage ?? 0).toFixed(2)}`;
-  if (typeof remaining === "number" && remaining <= 0) throw new Error(`${detail}: no credit left`);
-  return detail;
-});
+
 
 if (cfg) {
   const c: Config = cfg;
   const store = new SessionStore({ prefix: "preflight-", redact: processSecrets() });
   const budget = new Budget();
-  const openrouter = process.env.OPENROUTER_API_KEY ?? "";
 
   await check(engine === "apple" ? "transcription on this Mac" : "transcription call", async () => {
     const src = existsSync("fixtures/conversation/remote.wav") ? readWav16k("fixtures/conversation/remote.wav") : null;
@@ -118,17 +107,19 @@ if (cfg) {
     return `"${r.text}"`;
   });
 
-  if (hasOpenRouter) await check("Jev call", async () => {
-    const jev = new JevClient(c.app.jev, { fetch, apiKey: openrouter, budget, log: (r) => store.append("jev_calls", r) });
+  const typesafe = process.env.TYPESAFE_API_KEY ?? "";
+  if (typesafe) await check("Jev call", async () => {
+    const jev = new JevClient(c.app.jev, { fetch, apiKey: typesafe, budget, log: (r) => store.append("jev_calls", r) });
     const res = await jev.ask(
       { current_segment: [], new_utterance: { speaker: "Nic", text: "OpenRouter listed Jev on September eighteenth.", tags: [] } },
       { boundary: c.timeline.boundary, ...c.s1.questions } as never, { purpose: "preflight" });
-    if (!res.model.startsWith("typesafe/jev-1.13")) throw new Error(`unexpected model ${res.model}`);
+    if (!res.model.startsWith("jev-1.13")) throw new Error(`unexpected model ${res.model}`);
     return `${res.model}, claim ${(res.answers.claim as { noul: number }).noul.toFixed(2)}`;
   });
 
-  if (hasOpenRouter) await check("System 2 call (research with web search)", async () => {
-    const s2 = new S2Client(c.app.s2, { fetch, apiKey: openrouter, budget, log: (r) => store.append("s2_calls", r) });
+  const openai = process.env.OPENAI_API_KEY ?? "";
+  if (openai) await check("System 2 call (research with web search)", async () => {
+    const s2 = new S2Client(c.app.s2, { fetch, apiKey: openai, budget, log: (r) => store.append("s2_calls", r) });
     const v = await s2.research({ speaker: "Nic", utterance: "OpenRouter listed Jev on September eighteenth.", segment: "" });
     return `${v.verdict}, ${v.sources.length} sources`;
   });

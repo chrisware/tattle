@@ -20,12 +20,12 @@ const run = (n: number) => !only || only.has(n);
 
 loadKeys();
 const cfg = loadConfig();
-const openrouter = process.env.OPENROUTER_API_KEY ?? "";
+const typesafe = process.env.TYPESAFE_API_KEY ?? "";
 const openai = process.env.OPENAI_API_KEY ?? "";
 const store = new SessionStore({ prefix: "smoke-", redact: processSecrets() });
 const budget = new Budget();
-const jev = new JevClient(cfg.app.jev, { fetch, apiKey: openrouter, budget, log: (r) => store.append("jev_calls", r) });
-const s2 = new S2Client(cfg.app.s2, { fetch, apiKey: openrouter, budget, log: (r) => store.append("s2_calls", r) });
+const jev = new JevClient(cfg.app.jev, { fetch, apiKey: typesafe, budget, log: (r) => store.append("jev_calls", r) });
+const s2 = new S2Client(cfg.app.s2, { fetch, apiKey: openai, budget, log: (r) => store.append("s2_calls", r) });
 const transcriber = new Transcriber(cfg.app.transcription, { fetch, apiKey: openai, budget, log: (r) => store.append("transcriptions", r) });
 
 const script = JSON.parse(readFileSync("fixtures/conversation/script.json", "utf8")) as {
@@ -80,7 +80,7 @@ await check(2, "per-utterance Jev request (boundary + s1@1)", async () => {
   const res = await jev.ask(state(1), q, { purpose: "smoke", question_set_version: "s1@1", live: false });
   const bad = Object.entries(q).filter(([id, qq]) => !typedLike(qq, res.answers[id])).map(([id]) => id);
   if (bad.length) throw new Error(`untyped or missing answers: ${bad.join(", ")}`);
-  if (!res.model.startsWith("typesafe/jev-1.13")) throw new Error(`model ${res.model}`);
+  if (!res.model.startsWith("jev-1.13")) throw new Error(`model ${res.model}`);
   return `model ${res.model}, claim=${(res.answers.claim as any).noul.toFixed(2)}, cost $${res.usage.cost}`;
 });
 

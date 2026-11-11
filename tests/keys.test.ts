@@ -11,19 +11,20 @@ import { fakeKeyCheckFetch as fakeFetch } from "./fakes/index.ts";
 
 const OPENAI = "sk-proj-abcdefghijklmnopqrstuvwxyz0123";
 const OPENROUTER = "sk-or-v1-abcdefghijklmnopqrstuvwxyz9876";
+const TYPESAFE = "ts-abcdefghijklmnopqrstuvwxyz9876";
 const tmpFile = () => join(mkdtempSync(join(tmpdir(), "keys-")), "Tattle", "credentials.json");
 
 describe("KeyStore", () => {
   test("the environment wins; the file fills what it lacks", () => {
     const path = tmpFile();
     const env: NodeJS.ProcessEnv = { OPENAI_API_KEY: "sk-from-env-0000000000000000" };
-    new KeyStore({ path, env: {} }).save({ openai: OPENAI, openrouter: OPENROUTER });
+    new KeyStore({ path, env: {} }).save({ openai: OPENAI, typesafe: TYPESAFE });
     const store = new KeyStore({ path, env }).load();
     expect(env.OPENAI_API_KEY).toBe("sk-from-env-0000000000000000");
-    expect(env.OPENROUTER_API_KEY).toBe(OPENROUTER);
+    expect(env.TYPESAFE_API_KEY).toBe(TYPESAFE);
     expect(store.status()).toEqual([
       { name: "openai", env: "OPENAI_API_KEY", set: true, source: "environment", hint: "0000" },
-      { name: "openrouter", env: "OPENROUTER_API_KEY", set: true, source: "file", hint: "9876" },
+      { name: "typesafe", env: "TYPESAFE_API_KEY", set: true, source: "file", hint: "9876" },
     ]);
     expect(() => store.save({ openai: OPENAI })).toThrow(/set in .env or your shell/);
   });
@@ -32,14 +33,14 @@ describe("KeyStore", () => {
     const path = tmpFile();
     const env: NodeJS.ProcessEnv = {};
     const store = new KeyStore({ path, env }).load();
-    expect(store.missing()).toEqual(["openai", "openrouter"]);
+    expect(store.missing()).toEqual(["openai", "typesafe"]);
     store.save({ openai: OPENAI });
     expect(statSync(path).mode & 0o777).toBe(0o600);
     expect(statSync(join(path, "..")).mode & 0o777).toBe(0o700);
     expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({ OPENAI_API_KEY: OPENAI });
     expect(env.OPENAI_API_KEY).toBe(OPENAI); // used at once
-    store.save({ openrouter: OPENROUTER });
-    expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({ OPENAI_API_KEY: OPENAI, OPENROUTER_API_KEY: OPENROUTER });
+    store.save({ typesafe: TYPESAFE });
+    expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({ OPENAI_API_KEY: OPENAI, TYPESAFE_API_KEY: TYPESAFE });
     expect(store.missing()).toEqual([]);
   });
 
@@ -51,25 +52,23 @@ describe("KeyStore", () => {
     expect(statSync(path).mode & 0o777).toBe(0o600);
     writeFileSync(path, "{ not json");
     const env: NodeJS.ProcessEnv = {};
-    expect(new KeyStore({ path, env }).load().missing()).toEqual(["openai", "openrouter"]);
+    expect(new KeyStore({ path, env }).load().missing()).toEqual(["openai", "typesafe"]);
   });
 });
 
 describe("checking a key", () => {
   test("catches paste mistakes before any call", () => {
-    expect(keyFormatProblem("openai", OPENROUTER)).toMatch(/OpenRouter key/);
-    expect(keyFormatProblem("openrouter", OPENAI)).toMatch(/OpenAI key/);
+    expect(keyFormatProblem("openai", OPENROUTER)).toMatch(/OpenRouter keys are not used/);
+    expect(keyFormatProblem("typesafe", OPENAI)).toMatch(/OpenAI key/);
     expect(keyFormatProblem("openai", "sk-abc def")).toMatch(/no spaces/);
     expect(keyFormatProblem("openai", "sk-short")).toMatch(/whole key/);
     expect(keyFormatProblem("openai", OPENAI)).toBeNull();
   });
 
-  test("refuses a key the service rejects; warns on no limit, no credit, missing models, or offline", async () => {
+  test("refuses a key the service rejects; warns on missing models or offline", async () => {
     expect((await checkKey("openai", OPENAI, { fetch: fakeFetch({ openai: 401 }).f })).ok).toBe(false);
-    expect((await checkKey("openrouter", OPENROUTER, { fetch: fakeFetch({ openrouter: 401 }).f })).ok).toBe(false);
-    expect(await checkKey("openrouter", OPENROUTER, { fetch: fakeFetch().f })).toEqual({ ok: true, message: "Key works: limit $10, $9.50 left" });
-    expect((await checkKey("openrouter", OPENROUTER, { fetch: fakeFetch({ limit: null }).f })).warning).toMatch(/no credit limit/);
-    expect((await checkKey("openrouter", OPENROUTER, { fetch: fakeFetch({ freeTier: true }).f })).warning).toMatch(/no credit yet/);
+    expect((await checkKey("typesafe", TYPESAFE, { fetch: fakeFetch({ typesafe: 401 }).f })).ok).toBe(false);
+    expect(await checkKey("typesafe", TYPESAFE, { fetch: fakeFetch().f })).toEqual({ ok: true, message: "Key works" });
     const lacking = await checkKey("openai", OPENAI, { fetch: fakeFetch({ models: ["gpt-transcribe"] }).f, models: ["gpt-transcribe", "gpt-live-transcribe"] });
     expect(lacking).toMatchObject({ ok: true, warning: expect.stringMatching(/gpt-live-transcribe/) });
     expect(await checkKey("openai", OPENAI, { fetch: fakeFetch({ offline: true }).f })).toMatchObject({ ok: true, warning: expect.stringMatching(/online/) });
@@ -78,10 +77,10 @@ describe("checking a key", () => {
   test("saves nothing unless every key given is accepted", async () => {
     const path = tmpFile();
     const store = new KeyStore({ path, env: {} }).load();
-    const bad = await new KeySetup(store, { fetch: fakeFetch({ openai: 401 }).f, models: [] }).save({ openai: OPENAI, openrouter: OPENROUTER });
+    const bad = await new KeySetup(store, { fetch: fakeFetch({ openai: 401 }).f, models: [] }).save({ openai: OPENAI, typesafe: TYPESAFE });
     expect(bad).toMatchObject({ saved: false, configured: false });
     expect(existsSync(path)).toBe(false);
-    const good = await new KeySetup(store, { fetch: fakeFetch().f, models: [] }).save({ openai: OPENAI, openrouter: OPENROUTER });
+    const good = await new KeySetup(store, { fetch: fakeFetch().f, models: [] }).save({ openai: OPENAI, typesafe: TYPESAFE });
     expect(good).toMatchObject({ saved: true, configured: true });
     expect(JSON.stringify(good)).not.toContain(OPENAI.slice(0, -4)); // only hints come back
   });
@@ -103,7 +102,7 @@ describe("the server before the keys are set", () => {
   afterAll(() => new Promise<void>((r) => server.close(() => r())));
 
   const call = (method: string, path: string, body?: unknown, headers: Record<string, string> = {}) =>
-    new Promise<{ status: number; json: any }>((resolve, reject) => {
+    new Promise<{ status: number; json: unknown }>((resolve, reject) => {
       const req = request(`http://127.0.0.1:${port}${path}`, { method, headers: { ...(body === undefined ? {} : { "content-type": "application/json" }), ...headers } }, (res) => {
         let text = "";
         res.on("data", (c) => (text += c));
@@ -117,17 +116,17 @@ describe("the server before the keys are set", () => {
   test("with Apple Speech no key is required: the app opens at once", async () => {
     transcription = "apple";
     const s = await call("GET", "/api/setup");
-    expect(s.json).toMatchObject({ configured: true, required: [], keys: [{ name: "openai", set: false }, { name: "openrouter", set: false }] });
+    expect(s.json).toMatchObject({ configured: true, required: [], keys: [{ name: "openai", set: false }, { name: "typesafe", set: false }] });
     expect((await call("GET", "/api/state")).status).toBe(200);
   });
 
-  test("with OpenAI only the setup routes answer until the OpenAI key is saved; OpenRouter is never required", async () => {
+  test("with OpenAI only the setup routes answer until the OpenAI key is saved; TypeSafe alone does not", async () => {
     transcription = "openai";
     expect((await call("GET", "/api/state")).status).toBe(503);
     expect((await call("GET", "/api/licenses")).status).toBe(200); // Help → Licenses works on the setup screen too
     const s = await call("GET", "/api/setup");
-    expect(s.json).toMatchObject({ configured: false, required: ["openai"], keys: [{ name: "openai", set: false }, { name: "openrouter", set: false }] });
-    expect((await call("POST", "/api/setup/keys", { openrouter: OPENROUTER })).json).toMatchObject({ saved: true, configured: false });
+    expect(s.json).toMatchObject({ configured: false, required: ["openai"], keys: [{ name: "openai", set: false }, { name: "typesafe", set: false }] });
+    expect((await call("POST", "/api/setup/keys", { typesafe: TYPESAFE })).json).toMatchObject({ saved: true, configured: false });
     expect((await call("GET", "/api/state")).status).toBe(503);
     expect((await call("POST", "/api/setup/keys", { openai: OPENAI })).json).toMatchObject({ saved: true, configured: true });
     expect((await call("GET", "/api/state")).status).toBe(200);

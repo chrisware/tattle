@@ -58,12 +58,13 @@ function setup(lines: TranscriptLine[], opts: { budget?: Budget; live?: boolean 
 }
 
 describe("chat service", () => {
-  test("models come from the catalogue with context window and price per million tokens", async () => {
+  test("models() returns the configured OpenAI ids with unknown prices and availability, and does not fetch", async () => {
     const { svc } = setup([]);
     const m = await svc.models();
+    expect(m.models.map((x) => x.id)).toContain("openai/gpt-6-luna");
     expect(m.default).toBe("openai/gpt-6-luna");
-    expect(m.models[0]).toMatchObject({ id: "openai/gpt-6-luna", contextLength: 1_050_000, inputUsdPerM: 0.1, outputUsdPerM: 0.5, available: true });
-    expect(m.models.find((x) => x.id === "openai/gpt-6-sol")?.available).toBe(false); // not in the fake catalogue
+    expect(m.models[0]).toMatchObject({ id: "openai/gpt-6-luna", name: "openai/gpt-6-luna", contextLength: null, inputUsdPerM: null, outputUsdPerM: null, available: null });
+    expect(m.models.find((x) => x.id === "openai/gpt-6-sol")).toMatchObject({ available: null, name: "openai/gpt-6-sol" });
   });
 
   test("a new chat spends nothing until its first question", async () => {
@@ -85,12 +86,14 @@ describe("chat service", () => {
     expect(done.message).toMatchObject({ role: "assistant", content: "Alice said [0:10] hello." });
     expect(done.call).toMatchObject({ kind: "chat_call", ok: true, cost_usd: 0.0012, provider_returned: "OpenAI" });
     expect((done.chat as any).title).toBe("Who spoke first?");
-    expect((done.chat as any).meter).toMatchObject({ contextTokens: 128, leftTokens: 1_050_000 - 128, costUsd: 0.0012, pendingLines: 0 });
+    expect((done.chat as any).meter).toMatchObject({ contextTokens: 128, leftTokens: null, costUsd: 0.0012, pendingLines: 0 });
     expect(budget.totals().chat).toBeCloseTo(0.0012);
     expect(spends()).toBe(1);
 
     const req = or.bodies[0];
-    expect(req).toMatchObject({ model: "openai/gpt-6-luna", stream: true, usage: { include: true }, provider: { data_collection: "deny" } });
+    expect(req).toMatchObject({ model: "gpt-6-luna", stream: true, stream_options: { include_usage: true }, reasoning_effort: "low" });
+    expect(req).not.toHaveProperty("provider");
+    expect(req).not.toHaveProperty("usage");
     expect(req.messages[0].role).toBe("system");
     expect(req.messages[1].content).toContain("[0:20] Speaker 1: line 2");
 
@@ -137,7 +140,7 @@ describe("chat service", () => {
   test("renames, model changes, and deletes are appended; unknown models are refused", async () => {
     const { svc } = setup([]);
     await svc.create();
-    expect(await svc.update("chat_1", { title: "Claims", model: "anthropic/claude-sonnet-5" })).toMatchObject({ title: "Claims", model: "anthropic/claude-sonnet-5" });
+    expect(await svc.update("chat_1", { title: "Claims", model: "openai/gpt-6-sol" })).toMatchObject({ title: "Claims", model: "openai/gpt-6-sol" });
     await expect(svc.update("chat_1", { model: "nobody/nothing" })).rejects.toThrow(/unknown model/);
     svc.remove("chat_1");
     expect(svc.list().chats).toHaveLength(0);

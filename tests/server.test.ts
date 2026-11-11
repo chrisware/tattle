@@ -372,14 +372,13 @@ describe("the label-set routes, on a real library in a temporary folder", () => 
   });
 
   test("none of the routes needs an API key", async () => {
-    const prev = process.env.OPENROUTER_API_KEY;
-    delete process.env.OPENROUTER_API_KEY;
+    const prev = process.env.OPENAI_API_KEY;
+    delete process.env.OPENAI_API_KEY;
     try {
-      expect(engine.openrouterKeySet()).toBe(false);
       expect((await call("GET", "/api/label-sets")).status).toBe(200);
       expect((await call("POST", "/api/label-sets/ai-podcast/clone")).status).toBe(201);
     } finally {
-      if (prev !== undefined) process.env.OPENROUTER_API_KEY = prev;
+      if (prev !== undefined) process.env.OPENAI_API_KEY = prev;
     }
   });
 });
@@ -421,7 +420,7 @@ describe("Try on a recording (POST /api/label-sets/try), with a fake Jev", () =>
     }
     return new Response(JSON.stringify({ answers, id: "gen-x", model: "typesafe/jev-1.13", provider: "TypeSafe", usage: { input_tokens: 2000, output_tokens: 0, cost: 0.0001 } }), { status: 200, headers: { "content-type": "application/json" } });
   }) as unknown as typeof fetch;
-  const withKey = new Engine({ sessionsDir: root, fetch: fakeFetch, openrouterKey: "sk-or-v1-test-key-000000000000", labelSets: new LabelSetStore({ builtInDir: "config/labels", userDir: mkdtempSync(join(tmpdir(), "ls-")) }) });
+  const withKey = new Engine({ sessionsDir: root, fetch: fakeFetch, typesafeKey: "ts-test-key-0000000000000000", labelSets: new LabelSetStore({ builtInDir: "config/labels", userDir: mkdtempSync(join(tmpdir(), "ls-")) }) });
   const draft = () => {
     const s = JSON.parse(readFileSync("config/labels/ai-podcast.json", "utf8"));
     return { ...s, id: "", builtIn: undefined, name: "Draft", categories: [s.categories[1]], scores: [], markers: [s.markers[0], s.markers[1]] };
@@ -461,7 +460,7 @@ describe("Try on a recording (POST /api/label-sets/try), with a fake Jev", () =>
     expect(asked.length).toBe(0);
   });
 
-  test("refused: an invalid draft, an unknown recording, while on air, and without the OpenRouter key", async () => {
+  test("refused: an invalid draft, an unknown recording, while on air, and without the TypeSafe key", async () => {
     await expect(withKey.labelSetApi.tryOn({ set: { ...draft(), markers: "x" }, sessionId: "20260929-100000" })).rejects.toMatchObject({ status: 400 });
     await expect(withKey.labelSetApi.tryOn({ set: draft(), sessionId: "nope" })).rejects.toMatchObject({ status: 404 });
     (withKey as unknown as { session: unknown }).session = { status: "running" };
@@ -470,13 +469,13 @@ describe("Try on a recording (POST /api/label-sets/try), with a fake Jev", () =>
     } finally {
       (withKey as unknown as { session: unknown }).session = null;
     }
-    const prev = process.env.OPENROUTER_API_KEY;
-    delete process.env.OPENROUTER_API_KEY;
+    const prev = process.env.TYPESAFE_API_KEY;
+    delete process.env.TYPESAFE_API_KEY;
     try {
       const noKey = new Engine({ sessionsDir: root, fetch: fakeFetch });
-      await expect(noKey.labelSetApi.tryOn({ set: draft(), sessionId: "20260929-100000" })).rejects.toMatchObject({ status: 400, extra: { needsKey: "openrouter" } });
+      await expect(noKey.labelSetApi.tryOn({ set: draft(), sessionId: "20260929-100000" })).rejects.toMatchObject({ status: 400, extra: { needsKey: "typesafe" } });
     } finally {
-      if (prev !== undefined) process.env.OPENROUTER_API_KEY = prev;
+      if (prev !== undefined) process.env.TYPESAFE_API_KEY = prev;
     }
   });
 });
@@ -485,7 +484,7 @@ describe("Create with AI (POST /api/label-sets/assist)", () => {
   const root = mkdtempSync(join(tmpdir(), "assist-"));
   const answer = { reply: "Here you go.", question: "What is it about?", choices: [], skip: [], set: null };
   const f = (async () => new Response(JSON.stringify({ id: "g", model: "openai/gpt-6-luna", choices: [{ message: { content: JSON.stringify(answer) } }], usage: { cost: 0.6 } }), { status: 200 })) as unknown as typeof fetch;
-  const engine = new Engine({ sessionsDir: root, fetch: f, openrouterKey: "sk-or-v1-test-key-000000000000" });
+  const engine = new Engine({ sessionsDir: root, fetch: f, openaiKey: "sk-proj-test-key-000000000000" });
   const body = (id = "c1") => ({ conversationId: id, messages: [{ role: "user", content: "A set for a cooking show." }], draft: null });
 
   test("answers with the reply, what the conversation spent, and its cap; logs the call beside the recordings", async () => {
@@ -501,15 +500,15 @@ describe("Create with AI (POST /api/label-sets/assist)", () => {
     await expect(engine.labelSetApi.assist(body("c2"))).resolves.toMatchObject({ spentUsd: 0.6 });
   });
 
-  test("refused without the OpenRouter key, and for a malformed conversation", async () => {
+  test("refused without the OpenAI key, and for a malformed conversation", async () => {
     await expect(engine.labelSetApi.assist({ ...body(), messages: [] })).rejects.toMatchObject({ status: 400 });
     await expect(engine.labelSetApi.assist({ ...body(), conversationId: "../x" })).rejects.toMatchObject({ status: 400 });
-    const prev = process.env.OPENROUTER_API_KEY;
-    delete process.env.OPENROUTER_API_KEY;
+    const prev = process.env.OPENAI_API_KEY;
+    delete process.env.OPENAI_API_KEY;
     try {
-      await expect(new Engine({ sessionsDir: root, fetch: f }).labelSetApi.assist(body())).rejects.toMatchObject({ status: 400, extra: { needsKey: "openrouter" } });
+      await expect(new Engine({ sessionsDir: root, fetch: f }).labelSetApi.assist(body())).rejects.toMatchObject({ status: 400, message: "Please provide your OpenAI API key to create labels with AI.", extra: { needsKey: "openai" } });
     } finally {
-      if (prev !== undefined) process.env.OPENROUTER_API_KEY = prev;
+      if (prev !== undefined) process.env.OPENAI_API_KEY = prev;
     }
   });
 });

@@ -134,7 +134,7 @@ describe("transcription", () => {
     expect(applyFixes("jeff and Jeffrey", [{ pattern: "jeff", replace: "Jev" }])).toBe("Jev and Jeffrey");
   });
 
-  test("refuses once OpenRouter said the credit is used up", async () => {
+  test("refuses once a provider said the credit is used up", async () => {
     const b = new Budget();
     try { b.exhaust("provider", "jev", "OpenRouter credits or key limit exhausted (402)"); } catch { /* expected */ }
     const t = new Transcriber(cfg.transcription, { fetch: fakeFetch([]).f, apiKey: "k", budget: b, log: () => {} });

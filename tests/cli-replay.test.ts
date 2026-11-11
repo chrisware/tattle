@@ -200,7 +200,7 @@ describe("npm run replay", () => {
     requireAssets();
     const dir = tmpDir("wav-");
     wavFile(dir, fixtureSlice("host", 0, 15_000), "host.wav");
-    // transcription answers; OpenRouter says the credit is gone (402, not retried)
+    // transcription answers; the provider says the credit is gone (402, not retried)
     const f = (async (url: string) => {
       if (url.includes("audio/transcriptions")) return new Response(JSON.stringify({ text: "Jev is four hundred times cheaper." }));
       return new Response(JSON.stringify({ error: { code: 402, message: "Insufficient credits" } }), { status: 402 });

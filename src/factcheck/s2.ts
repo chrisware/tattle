@@ -3,7 +3,54 @@ import type { AppConfig } from "../config.ts";
 import type { Budget } from "../budget.ts";
 import { backoffMs, classifyError, effectiveStatus, HttpError, parseRetryAfter } from "../jev/client.ts";
 
-export const CHAT_URL = "https://openrouter.ai/api/v1/chat/completions";
+export const CHAT_URL = "https://api.openai.com/v1/chat/completions";
+/** Chat and label drafting post to {@link s2ChatUrl}. System 2 research uses the Responses API on the same host. */
+export const DEFAULT_S2_BASE = "https://api.openai.com/v1";
+
+/** OpenAI-compatible base, no trailing slash. `OPENAI_BASE_URL` overrides the default. */
+export function s2BaseUrl(override?: string): string {
+  return (override ?? process.env.OPENAI_BASE_URL ?? DEFAULT_S2_BASE).trim().replace(/\/$/, "");
+}
+
+export function s2ChatUrl(base = s2BaseUrl()): string {
+  const b = base.replace(/\/chat\/completions$/, "").replace(/\/responses$/, "");
+  return `${b}/chat/completions`;
+}
+
+export function s2ResponsesUrl(base = s2BaseUrl()): string {
+  const b = base.replace(/\/chat\/completions$/, "").replace(/\/responses$/, "");
+  return b.endsWith("/v1") ? `${b}/responses` : `${b}/v1/responses`;
+}
+
+/** Official OpenAI hosts the Responses `web_search` tool. A generic compatible base does not. */
+export function s2HostIsOpenAI(base = s2BaseUrl()): boolean {
+  try { return new URL(base).hostname === "api.openai.com"; } catch { return false; }
+}
+
+/**
+ * `S2_WEB=responses` forces web search, `off` disables it, `auto` (default) uses it only on api.openai.com.
+ * Research is the only call that searches. Audit and rewrite stay on chat completions.
+ */
+export function s2WebSearch(base = s2BaseUrl(), web: unknown): boolean {
+  if (!web) return false;
+  const mode = (process.env.S2_WEB ?? "auto").trim().toLowerCase();
+  if (mode === "off" || mode === "0" || mode === "false") return false;
+  if (mode === "responses" || mode === "openai") return true;
+  return s2HostIsOpenAI(base);
+}
+
+/** Configured ids keep the `openai/` prefix. Direct OpenAI wants the bare id. Does not read `S2_MODEL`: that override is System 2 only. */
+export function openaiWireModel(configured: string, base = s2BaseUrl()): string {
+  if (s2HostIsOpenAI(base) && configured.startsWith("openai/")) return configured.slice("openai/".length);
+  return configured;
+}
+
+/** Configured ids keep an `openai/` prefix. Direct OpenAI, and most compatible gateways, want the bare id. */
+export function s2ModelId(configured: string, base = s2BaseUrl()): string {
+  const fromEnv = process.env.S2_MODEL?.trim();
+  if (fromEnv) return fromEnv;
+  return openaiWireModel(configured, base);
+}
 export type S2Purpose = "research" | "audit" | "rewrite";
 
 // ---------- prompts (byte-identical across calls, so cached input is cheap) ----------
@@ -144,9 +191,10 @@ export function citationsOf(annotations: unknown): Citation[] {
   if (!Array.isArray(annotations)) return [];
   const out: Citation[] = [];
   for (const a of annotations) {
-    if (a?.type === "url_citation" && typeof a.url_citation?.url === "string") {
-      out.push({ url: a.url_citation.url, title: typeof a.url_citation.title === "string" ? a.url_citation.title : a.url_citation.url });
-    }
+    if (a?.type !== "url_citation") continue;
+    const nested = a?.url_citation;
+    const cite = typeof nested?.url === "string" ? nested : typeof a?.url === "string" ? a : null;
+    if (cite) out.push({ url: cite.url, title: typeof cite.title === "string" ? cite.title : cite.url });
   }
   return out;
 }
@@ -239,6 +287,8 @@ export interface S2Deps {
   sleep?: (ms: number) => Promise<void>;
   rand?: () => number;
   today?: () => string;
+  /** OpenAI-compatible base. Defaults to `OPENAI_BASE_URL` or https://api.openai.com/v1. */
+  baseUrl?: string;
 }
 
 interface ChatRequest {
@@ -254,9 +304,9 @@ interface ChatRequest {
 
 interface ChatResult { content: string; annotations: unknown; }
 
-/** GPT-6 Luna through OpenRouter chat completions (§2.5). The only path to System 2. */
+/** System 2 through an OpenAI-compatible endpoint. Jev is unchanged. Research on api.openai.com uses Responses web_search. */
 export class S2Client {
-  /** §6 row 5: sticky fallback to json_object when strict output fails together with the web plugin. */
+  /** Sticky fallback to json_object when strict output is rejected. */
   private jsonObjectWithWeb = false;
 
   constructor(private readonly cfg: AppConfig["s2"], private readonly deps: S2Deps) {}
@@ -267,6 +317,10 @@ export class S2Client {
 
   private today(): string {
     return this.deps.today ? this.deps.today() : new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+  }
+
+  private base(): string {
+    return s2BaseUrl(this.deps.baseUrl);
   }
 
   async research(input: { claim_id?: string; speaker: string; utterance: string; segment: string }, web = this.cfg.web): Promise<Verdict> {
@@ -305,7 +359,7 @@ export class S2Client {
       const r = await this.chat(req, useObject ? "json_object" : "json_schema");
       return { value: parseContent(r.content, schema), annotations: r.annotations };
     } catch (e) {
-      // Strict output failing together with the web plugin: retry once with json_object and a zod parse (§6 row 5).
+      // Strict output rejected on a research call: retry once with json_object.
       const strictRejected = e instanceof HttpError ? effectiveStatus(e) === 400 : e instanceof ContentError;
       if (req.web === null || useObject || !strictRejected) throw e;
       const r = await this.chat(req, "json_object");
@@ -315,16 +369,32 @@ export class S2Client {
     }
   }
 
-  private body(req: ChatRequest, format: "json_schema" | "json_object") {
-    const user = format === "json_object"
+  private userText(req: ChatRequest, format: "json_schema" | "json_object"): string {
+    return format === "json_object"
       ? `${req.user}\n\nReply with one JSON object only, matching this JSON schema:\n${JSON.stringify(req.jsonSchema)}`
       : req.user;
+  }
+
+  private body(req: ChatRequest, format: "json_schema" | "json_object") {
+    const user = this.userText(req, format);
+    const model = s2ModelId(this.cfg.model, this.base());
+    if (s2WebSearch(this.base(), req.web)) {
+      return {
+        model,
+        input: [{ role: "system", content: req.system }, { role: "user", content: user }],
+        tools: [{ type: "web_search" }],
+        reasoning: { effort: req.effort },
+        text: {
+          format: format === "json_schema"
+            ? { type: "json_schema", name: req.schemaName, strict: true, schema: req.jsonSchema }
+            : { type: "json_object" },
+        },
+      };
+    }
     return {
-      model: this.cfg.model,
+      model,
       messages: [{ role: "system", content: req.system }, { role: "user", content: user }],
-      reasoning: { effort: req.effort },
-      provider: format === "json_schema" ? this.cfg.provider : { ...this.cfg.provider, require_parameters: false },
-      ...(req.web ? { plugins: [{ id: "web", engine: req.web.engine, max_results: req.web.max_results }] } : {}),
+      ...(s2HostIsOpenAI(this.base()) ? { reasoning_effort: req.effort } : {}),
       response_format: format === "json_schema"
         ? { type: "json_schema", json_schema: { name: req.schemaName, strict: true, schema: req.jsonSchema } }
         : { type: "json_object" },
@@ -335,13 +405,13 @@ export class S2Client {
     this.deps.budget.assertCanSpend(`s2:${req.purpose}`);
     this.deps.onStart?.(req.purpose);
     const started = Date.now();
-    const body = JSON.stringify(this.body(req, format));
+    const payload = JSON.stringify(this.body(req, format));
     let attempt = 0;
     for (;;) {
       attempt++;
       try {
-        const raw = await this.send(body);
-        const cost = raw.usage.cost;
+        const raw = await this.send(req, payload);
+        const cost = typeof raw.usage?.cost === "number" ? raw.usage.cost : 0;
         this.deps.budget.record("s2", cost);
         const msg = raw.choices?.[0]?.message;
         const content = typeof msg?.content === "string" ? msg.content
@@ -353,10 +423,10 @@ export class S2Client {
         if (cls === "fail" || attempt >= this.cfg.maxAttempts) {
           this.log(req, format, { ok: false, attempts: attempt, started, error: e instanceof Error ? e.message : String(e) });
           if (e instanceof HttpError && effectiveStatus(e) === 402 && cls === "fail") {
-            this.deps.budget.exhaust("provider", `s2:${req.purpose}`, "OpenRouter credits or key limit exhausted (402)");
+            this.deps.budget.exhaust("provider", `s2:${req.purpose}`, "provider credits or key limit exhausted (402)");
           }
           if (e instanceof HttpError && effectiveStatus(e) === 401) {
-            throw new HttpError(401, e.body, null, "OpenRouter rejected the API key (401): check OPENROUTER_API_KEY");
+            throw new HttpError(401, e.body, null, "the OpenAI-compatible endpoint rejected the API key (401): check OPENAI_API_KEY");
           }
           throw e;
         }
@@ -365,15 +435,14 @@ export class S2Client {
     }
   }
 
-  private async send(body: string): Promise<any> {
+  private async send(req: ChatRequest, body: string): Promise<any> {
+    const url = s2WebSearch(this.base(), req.web) ? s2ResponsesUrl(this.base()) : s2ChatUrl(this.base());
     let res: Response;
     let text: string;
     try {
-      res = await this.deps.fetch(CHAT_URL, {
+      res = await this.deps.fetch(url, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${this.deps.apiKey}`, "Content-Type": "application/json", "X-OpenRouter-Title": "Tattle",
-        },
+        headers: { Authorization: `Bearer ${this.deps.apiKey}`, "Content-Type": "application/json" },
         body,
         signal: AbortSignal.timeout(this.cfg.timeoutMs),
       });
@@ -392,8 +461,34 @@ export class S2Client {
       throw new HttpError(res.status, text, retryAfterMs);
     }
     if (json.error) throw new HttpError(res.status, text, retryAfterMs);
-    if (typeof json.usage?.cost !== "number") throw new HttpError(-1, text, null, "response without usage.cost rejected");
-    return json;
+    return this.normalize(json);
+  }
+
+  /** Chat completions, or a Responses API body, both become `choices[0].message` plus a numeric `usage.cost`. */
+  private normalize(json: any): any {
+    const u = json.usage ?? {};
+    const prompt = u.prompt_tokens ?? u.input_tokens ?? 0;
+    const completion = u.completion_tokens ?? u.output_tokens ?? 0;
+    const reasoning = u.completion_tokens_details?.reasoning_tokens ?? u.output_tokens_details?.reasoning_tokens ?? 0;
+    const cached = u.prompt_tokens_details?.cached_tokens ?? u.input_tokens_details?.cached_tokens ?? 0;
+    const cost = typeof u.cost === "number" ? u.cost : 0;
+    const usage = {
+      prompt_tokens: prompt,
+      completion_tokens: completion,
+      completion_tokens_details: { reasoning_tokens: reasoning },
+      prompt_tokens_details: { cached_tokens: cached },
+      cost,
+    };
+    if (json.choices) return { ...json, usage };
+    const parts = (Array.isArray(json.output) ? json.output : []).flatMap((o: any) => Array.isArray(o?.content) ? o.content : []);
+    const content = parts.map((p: any) => typeof p?.text === "string" ? p.text : "").join("");
+    const annotations = parts.flatMap((p: any) => Array.isArray(p?.annotations) ? p.annotations : []);
+    return {
+      ...json,
+      provider: json.provider ?? "openai",
+      choices: [{ message: { role: "assistant", content, annotations } }],
+      usage,
+    };
   }
 
   private log(
@@ -416,11 +511,11 @@ export class S2Client {
         completion_tokens: u.completion_tokens ?? 0,
         reasoning_tokens: u.completion_tokens_details?.reasoning_tokens ?? 0,
         cached_tokens: u.prompt_tokens_details?.cached_tokens ?? 0,
-        cost: u.cost,
+        cost: u.cost ?? 0,
       } : null,
       cost_usd: u?.cost ?? 0,
       response_format: format,
-      web_engine: req.web?.engine ?? null,
+      web_engine: s2WebSearch(this.base(), req.web) ? "openai" : null,
       request: { system: req.system, user: req.user },
       ...(r.content !== undefined ? { response: r.content } : {}),
       ...(r.error ? { error: r.error } : {}),

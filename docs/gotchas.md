@@ -1,6 +1,6 @@
 ---
-description: Verified traps in this project — macOS capture permissions, Apple Speech (SpeechAnalyzer) on-device transcription, sherpa-onnx, OpenAI and OpenRouter behaviour, the Electron Mac app, the website on Cloudflare, Jev question wording, testing (fake timers, real user data, happy-dom, end-to-end isolation), and test-fixture voices — each with its fix.
-tags: [gotchas, macos, apple-speech, speechanalyzer, openai, openrouter, jev, sherpa-onnx, electron, website, cloudflare, testing]
+description: Verified traps in this project — macOS capture permissions, Apple Speech (SpeechAnalyzer) on-device transcription, sherpa-onnx, OpenAI behaviour, the Electron Mac app, the website on Cloudflare, Jev question wording, testing (fake timers, real user data, happy-dom, end-to-end isolation), and test-fixture voices — each with its fix.
+tags: [gotchas, macos, apple-speech, speechanalyzer, openai, typesafe, jev, sherpa-onnx, electron, website, cloudflare, testing]
 source:
   - native/capture/**
   - src/audio/nativeSource.ts
@@ -53,11 +53,11 @@ Found building on-device transcription on macOS 26.2, 29 September 2026 (see [Tr
 - **An out-of-credit account returns 429 `insufficient_quota`**, which looks like a rate limit. Retrying it wastes time, so the transcriber fails at once on that code. Add credits at platform.openai.com → Billing.
 - **The realtime transcription docs omit the WebSocket URL**: it is `wss://api.openai.com/v1/realtime?intent=transcription`, with an `Authorization: Bearer` header, which Node 24's `WebSocket` accepts as `{ headers }`. `gpt-live-transcribe` needs `turn_detection: null` and 24 kHz PCM.
 
-## OpenRouter and GPT-6 Luna
+## GPT-6 Luna
 
 - **Verdicts embed inline markdown citations** (`([site](url))`) in `correction` and in source titles, because of the web plugin. They clutter the cards and count as one "word", which defeats the 25-word correction limit. `stripCitations` in `src/factcheck/s2.ts` removes them.
 - **Strict `json_schema` works together with the web plugin** on GPT-6 Luna (both the exa and native engines), so the `json_object` fallback has not been needed; it stays in place in case that changes.
-- **`provider: { data_collection: "deny" }` is sent on Jev and GPT-6 Luna calls** (`config/app.json`), and both still route. Adding `zdr: true` was not tested and may break Jev, whose endpoint is not confirmed on the zero-retention list.
+- **The `provider` block in `config/app.json` is not sent.** Chat strips it before calling OpenAI, and Jev uses TypeSafe. A 404 is reported as the provider's own message, not as a data-collection refusal.
 
 ## Web page
 
@@ -76,7 +76,7 @@ Found building on-device transcription on macOS 26.2, 29 September 2026 (see [Tr
 
 ## Chat
 
-- **A stopped stream never reaches its `usage` chunk**, so a stopped reply's cost is unknown from the stream. OpenRouter's `GET /api/v1/generation?id=<gen id>` has it a second or two later: the chat asks up to 3 times before falling back to a price-list estimate (marked `estimated`). The id is the chunks' `id`.
+- **A stopped stream never reaches its `usage` chunk**, so a stopped reply's cost is unknown from the stream. OpenAI does not return a dollar cost or a generation lookup. The chat prices a returned or stopped reply from its token counts, or from the request when those are missing, and marks it `estimated`. A failed call that returned neither usage nor text is not metered.
 - **Headless Chrome never finishes loading the page** (`--virtual-time-budget` hangs), because `/api/events` keeps a server-sent event stream open. For a screenshot use `--timeout=6000` instead.
 
 ## Mac app (Electron)

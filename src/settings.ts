@@ -1,15 +1,26 @@
-// The user's settings that are not keys: which engine transcribes, and whether seals get trusted timestamps. Saved next to credentials.json, in
-// ~/Library/Application Support/Tattle/settings.json, shared by the Mac app and npm run serve. See docs/transcription.md.
+// The user's settings that are not keys: which engine transcribes, whether seals get trusted timestamps, and which
+// model each OpenAI job uses. Saved next to credentials.json, in ~/Library/Application Support/Tattle/settings.json,
+// shared by the Mac app and npm run serve. See docs/transcription.md.
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { appSupportDir } from "./paths.ts";
 import type { TranscriptionEngine } from "./pipeline/session.ts";
 import { appleSpeechStatus, installAppleModel, type AppleStatus } from "./transcribe/apple.ts";
 
+export const MODEL_JOBS = ["chat", "labels", "s2"] as const;
+export type ModelJob = (typeof MODEL_JOBS)[number];
+/** Per-job model override. Absent: the configured default. */
+export interface ModelChoices {
+  chat?: string;
+  labels?: string;
+  s2?: string;
+}
+
 export interface Settings {
   transcriptionEngine?: TranscriptionEngine;
   /** Seals are timestamped by independent authorities, which receive only a hash (docs/recordings.md § Proof of a recording). */
   trustedTimestamps?: boolean;
+  models?: ModelChoices;
 }
 
 /** tests override it */
@@ -26,9 +37,11 @@ export class SettingsStore {
       const json = JSON.parse(readFileSync(this.path, "utf8"));
       const e = json?.transcriptionEngine;
       const t = json?.trustedTimestamps;
+      const models = modelChoices(json?.models);
       return {
         ...(e === "apple" || e === "openai" ? { transcriptionEngine: e } : {}),
         ...(typeof t === "boolean" ? { trustedTimestamps: t } : {}),
+        ...(models ? { models } : {}),
       };
     } catch {
       console.error(`${this.path} is not valid JSON: ignored`);
@@ -36,9 +49,15 @@ export class SettingsStore {
     }
   }
 
-  /** Written aside, then renamed, like credentials.json: a crash never leaves half a file. */
+  /** Written aside, then renamed, like credentials.json: a crash never leaves half a file. `models` is deep-merged so saving one job does not wipe the others. */
   save(patch: Settings): Settings {
-    const next = { ...this.read(), ...patch };
+    const prev = this.read();
+    const next: Settings = { ...prev, ...patch };
+    if (patch.models) {
+      const models = mergeModels(prev.models, patch.models);
+      if (models) next.models = models;
+      else delete next.models;
+    }
     const dir = dirname(this.path);
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     const tmp = `${this.path}.${process.pid}.tmp`;
@@ -47,6 +66,27 @@ export class SettingsStore {
     renameSync(tmp, this.path);
     return next;
   }
+}
+
+function modelChoices(raw: unknown): ModelChoices | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const out: ModelChoices = {};
+  for (const job of MODEL_JOBS) {
+    const v = (raw as Record<string, unknown>)[job];
+    if (typeof v === "string" && v.trim()) out[job] = v.trim();
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+function mergeModels(prev: ModelChoices | undefined, patch: ModelChoices): ModelChoices | undefined {
+  const merged: ModelChoices = { ...prev };
+  for (const job of MODEL_JOBS) {
+    if (patch[job] === undefined) continue;
+    const v = patch[job]!.trim();
+    if (v) merged[job] = v;
+    else delete merged[job];
+  }
+  return Object.keys(merged).length ? merged : undefined;
 }
 
 /**

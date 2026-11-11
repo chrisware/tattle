@@ -1,5 +1,6 @@
-// The two API keys, both optional (OpenAI's is required only when OpenAI transcribes; OpenRouter's only for fact-checking,
-// labels, and Chat): where they are stored, how they are loaded, and how a key is checked before it is saved.
+// Two API keys, both optional (OpenAI's is required only when OpenAI transcribes, and also serves Chat, label
+// drafting, and fact-check research; TypeSafe's for Jev fact-checking and labels): where they are stored, how they
+// are loaded, and how a key is checked before it is saved.
 // Keys live in the environment (a shell variable or .env) or in a credentials file in the user's Library, outside
 // the project folder, so they can never be committed. The environment wins. See docs/setup.md.
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
@@ -7,14 +8,15 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { appSupportDir } from "./paths.ts";
 
-export const KEY_ENV = { openai: "OPENAI_API_KEY", openrouter: "OPENROUTER_API_KEY" } as const;
+export const KEY_ENV = { openai: "OPENAI_API_KEY", typesafe: "TYPESAFE_API_KEY" } as const;
 export type KeyName = keyof typeof KEY_ENV;
 export const KEY_NAMES = Object.keys(KEY_ENV) as KeyName[];
 
-/** The environment for a child process (the capture helper, afconvert): everything but the API keys, which none needs. */
+/** The environment for a child process (the capture helper, afconvert): everything but the API keys, which none needs. A leftover OpenRouter key is stripped too, so it cannot reach a child. */
+const STRIPPED_ENV = [...Object.values(KEY_ENV), "OPENROUTER_API_KEY"] as const;
 export function childEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const out = { ...env };
-  for (const name of Object.values(KEY_ENV)) delete out[name];
+  for (const name of STRIPPED_ENV) delete out[name];
   return out;
 }
 
@@ -137,15 +139,15 @@ export function keyFormatProblem(name: KeyName, key: string): string | null {
   if (!key) return "Paste the key.";
   if (/\s/.test(key)) return "A key has no spaces or line breaks: copy it again.";
   if (key.length < 20 || key.length > 400) return "This does not look like a whole key: copy it again.";
-  if (name === "openai" && key.startsWith("sk-or-")) return "This is an OpenRouter key: paste it in the OpenRouter field.";
-  if (name === "openrouter" && key.startsWith("sk-") && !key.startsWith("sk-or-")) return "This looks like an OpenAI key: OpenRouter keys start with sk-or-.";
+  if (key.startsWith("sk-or-")) return "OpenRouter keys are not used. Paste an OpenAI key in the OpenAI field, or a TypeSafe key in the TypeSafe field.";
+  if (name === "typesafe" && key.startsWith("sk-")) return "This looks like an OpenAI key: paste it in the OpenAI field.";
   return null;
 }
 
 /**
- * Asks the service whether the key works, for free. OpenRouter also reports the key's credit limit; OpenAI lists the
- * models the key can use. A key with no credit is not detectable here: OpenAI then answers 429 insufficient_quota on
- * the first real call (docs/gotchas.md).
+ * Asks the service whether the key works, for free. OpenAI lists the models the key can use. TypeSafe's check is
+ * GET /v1/models: a 200 means the key works. A key with no credit is not detectable here: OpenAI then answers 429
+ * insufficient_quota on the first real call (docs/gotchas.md).
  */
 export async function checkKey(name: KeyName, key: string, opts: { fetch: typeof fetch; models?: string[] }): Promise<KeyCheck> {
   const format = keyFormatProblem(name, key);
@@ -153,28 +155,18 @@ export async function checkKey(name: KeyName, key: string, opts: { fetch: typeof
   const headers = { Authorization: `Bearer ${key}` };
   let res: Response;
   try {
-    res = await opts.fetch(name === "openai" ? "https://api.openai.com/v1/models" : "https://openrouter.ai/api/v1/key", {
+    res = await opts.fetch(name === "openai" ? "https://api.openai.com/v1/models" : "https://api.typesafe.ai/v1/models", {
       headers, signal: AbortSignal.timeout(10_000),
     });
   } catch {
     return { ok: true, message: "Saved", warning: "Could not reach the service to check it (are you online?). It was saved anyway." };
   }
   if (res.status === 401) {
-    return { ok: false, message: name === "openai" ? "OpenAI does not accept this key. Check it was copied whole, and not revoked." : "OpenRouter does not accept this key. Check it was copied whole, and not deleted or disabled." };
+    return { ok: false, message: name === "openai" ? "OpenAI does not accept this key. Check it was copied whole, and not revoked." : "TypeSafe does not accept this key. Check it was copied whole, and not revoked." };
   }
   if (!res.ok) return { ok: true, message: "Saved", warning: `The service answered HTTP ${res.status} when checking it. It was saved anyway.` };
   const body = await res.json().catch(() => null);
-  if (name === "openrouter") {
-    const d = body?.data ?? {};
-    if (d.is_free_tier === true) {
-      return { ok: true, message: "Key works", warning: "This account has no credit yet: add some at openrouter.ai/settings/credits, or Jev, fact-checking, and chat will fail." };
-    }
-    if (d.limit === null || d.limit === undefined) {
-      return { ok: true, message: "Key works", warning: "This key has no credit limit. Setting one (for example $10) at openrouter.ai/settings/keys caps what a mistake can cost." };
-    }
-    const left = typeof d.limit_remaining === "number" ? `, $${d.limit_remaining.toFixed(2)} left` : "";
-    return { ok: true, message: `Key works: limit $${d.limit}${left}` };
-  }
+
   const ids = new Set<string>(Array.isArray(body?.data) ? body.data.map((m: { id?: unknown }) => String(m.id)) : []);
   const lacking = (opts.models ?? []).filter((m) => ids.size > 0 && !ids.has(m));
   if (lacking.length) return { ok: true, message: "Key works", warning: `This key cannot use ${lacking.join(" and ")}, which transcription needs. Check the project's model permissions at platform.openai.com.` };
@@ -194,7 +186,7 @@ export class KeySetup {
 
   /** Checks every key given; saves them only if none is refused. */
   async save(body: unknown) {
-    if (!body || typeof body !== "object") throw new KeyError(400, "expected { openai?, openrouter? }");
+    if (!body || typeof body !== "object") throw new KeyError(400, "expected { openai?, typesafe? }");
     const given: Partial<Record<KeyName, string>> = {};
     for (const name of KEY_NAMES) {
       const v = (body as Record<string, unknown>)[name];
@@ -217,3 +209,4 @@ export class KeySetup {
     return { saved, checks, ...this.status() };
   }
 }
+

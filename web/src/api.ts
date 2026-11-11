@@ -86,7 +86,13 @@ async function streamChat(id: string, body: { content?: string; mode?: string },
   }
 }
 
-export type KeyName = "openai" | "openrouter";
+export interface ModelChoiceView {
+  models: string[];
+  saved: { chat?: string; labels?: string; s2?: string };
+  effective: { chat: string; labels: string; s2: string };
+}
+
+export type KeyName = "openai" | "typesafe";
 export interface KeyStatus { name: KeyName; env: string; set: boolean; source: "environment" | "file" | null; hint: string | null }
 /** `required`: the keys the app cannot open without, which follow the transcription engine (OpenAI's, or none). */
 export interface SetupStatus { configured: boolean; required: KeyName[]; keys: KeyStatus[]; path: string }
@@ -198,6 +204,8 @@ export const api = {
   resume: () => call<{ paused: boolean }>("POST", "/api/session/resume"),
   deleteSession: (id: string) => call<{ deleted: string }>("DELETE", `/api/sessions/${encodeURIComponent(id)}`),
   chatModels: () => call<{ default: string; models: ChatModel[] }>("GET", "/api/chat/models"),
+  modelChoices: () => call<ModelChoiceView>("GET", "/api/models"),
+  saveModels: (body: { chat?: string; labels?: string; s2?: string }) => call<ModelChoiceView>("PUT", "/api/models", body),
   chats: () => call<ChatList>("GET", "/api/chats"),
   chat: (id: string) => call<Chat>("GET", `/api/chats/${encodeURIComponent(id)}`),
   createChat: (model: string) => call<Chat>("POST", "/api/chats", { model }),

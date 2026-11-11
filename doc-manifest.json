@@ -125,7 +125,7 @@
     },
     {
       "dangling": false,
-      "description": "The chat window — questions about the transcript of the session on screen, live or recorded, to any curated OpenRouter model — how a live chat keeps up with the transcript, storage, cost, the API, and the page.",
+      "description": "The chat window — questions about the transcript of the session on screen, live or recorded, to a configured OpenAI model — how a live chat keeps up with the transcript, storage, cost, the API, and the page.",
       "has_frontmatter": true,
       "headings": [
         "Chat",
@@ -136,7 +136,7 @@
         "API",
         "The page — `web/src/chat.ts`, `web/src/markdown.ts`"
       ],
-      "line_count": 152,
+      "line_count": 139,
       "links_to": [
         "docs/architecture.md",
         "docs/mission.md",
@@ -154,7 +154,7 @@
       "source_unresolved": [],
       "tags": [
         "chat",
-        "openrouter",
+        "openai",
         "llm",
         "transcript",
         "cost",
@@ -241,7 +241,7 @@
     },
     {
       "dangling": false,
-      "description": "Verified traps in this project — macOS capture permissions, Apple Speech (SpeechAnalyzer) on-device transcription, sherpa-onnx, OpenAI and OpenRouter behaviour, the Electron Mac app, the website on Cloudflare, Jev question wording, testing (fake timers, real user data, happy-dom, end-to-end isolation), and test-fixture voices — each with its fix.",
+      "description": "Verified traps in this project — macOS capture permissions, Apple Speech (SpeechAnalyzer) on-device transcription, sherpa-onnx, OpenAI behaviour, the Electron Mac app, the website on Cloudflare, Jev question wording, testing (fake timers, real user data, happy-dom, end-to-end isolation), and test-fixture voices — each with its fix.",
       "has_frontmatter": true,
       "headings": [
         "Gotchas",
@@ -249,7 +249,7 @@
         "Apple Speech",
         "sherpa-onnx",
         "OpenAI",
-        "OpenRouter and GPT-6 Luna",
+        "GPT-6 Luna",
         "Web page",
         "Export and import",
         "Chat",
@@ -292,7 +292,7 @@
         "apple-speech",
         "speechanalyzer",
         "openai",
-        "openrouter",
+        "typesafe",
         "jev",
         "sherpa-onnx",
         "electron",
@@ -323,7 +323,7 @@
         "The client — `src/jev/client.ts`",
         "Measured performance and cost"
       ],
-      "line_count": 200,
+      "line_count": 199,
       "links_to": [
         "docs/architecture.md",
         "docs/gotchas.md",
@@ -505,7 +505,7 @@
     },
     {
       "dangling": false,
-      "description": "The two API keys (OpenAI and OpenRouter), both optional — which one the transcription engine requires, the first-run setup screen (OpenAI only, on Macs that transcribe with OpenAI), the prompts that ask for the OpenRouter key when fact-checking, labels, or Chat need it, where keys are stored on the Mac, how each key is checked before it is saved, the setup routes and their gate, and how the command-line tools find the keys.",
+      "description": "The two API keys (OpenAI and TypeSafe), both optional — which one the transcription engine requires, the first-run setup screen (OpenAI only, on Macs that transcribe with OpenAI), the prompts that ask for a key when fact-checking, labels, Chat, or label drafting need it, where keys are stored on the Mac, how each key is checked before it is saved, the setup routes and their gate, and how the command-line tools find the keys.",
       "has_frontmatter": true,
       "headings": [
         "Setup and API keys",
@@ -516,10 +516,9 @@
         "Routes and the gate",
         "Command-line tools"
       ],
-      "line_count": 109,
+      "line_count": 108,
       "links_to": [
         "docs/architecture.md",
-        "docs/chat.md",
         "docs/desktop.md",
         "docs/gotchas.md",
         "docs/jev.md",
@@ -545,7 +544,7 @@
         "credentials",
         "security",
         "openai",
-        "openrouter",
+        "typesafe",
         "first-run",
         "key-prompt"
       ],

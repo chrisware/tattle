@@ -34,7 +34,7 @@ async function boot(o: { url?: string; state?: object | (() => unknown); api?: R
     devices: async () => [],
     about: async () => ({ name: "Tattle", version: "1.0.1", license: { id: null, holder: null, text: "" } }),
     labelSets: async () => ({ sets: [] }),
-    setup: async () => ({ configured: true, required: [], path: "~/x", keys: [{ name: "openrouter", env: "OPENROUTER_API_KEY", set: true, source: "file", hint: "abcd" }] }),
+    setup: async () => ({ configured: true, required: [], path: "~/x", keys: [{ name: "typesafe", env: "TYPESAFE_API_KEY", set: true, source: "file", hint: "abcd" }] }),
     transcription: async () => ({ engine: "apple", saved: null, openai: { keySet: false }, apple: { available: true, reason: null, model: "installed", fraction: null, error: null } }),
     sessions: async () => [],
     chats: async () => ({ sessionId: "S1", spentUsd: 0, chats: [] }),
@@ -455,8 +455,8 @@ describe("a time cited in a chat reply", () => {
 
 describe("what the app hands the panels", () => {
   test("the API keys window says a saved key is used by the next call", async () => {
-    await boot({ url: "/?panel=keys", api: { saveKeys: async () => ({ saved: true, checks: { openrouter: { ok: true, message: "Key works" } }, keys: [], configured: true, required: [], path: "" }) } });
-    type(document.querySelector<HTMLInputElement>("#keys input")!, "sk-or-v1-abcdefghijklmnopqrstuvwx");
+    await boot({ url: "/?panel=keys", api: { saveKeys: async () => ({ saved: true, checks: { openai: { ok: true, message: "Key works" } }, keys: [], configured: true, required: [], path: "" }) } });
+    type(document.querySelector<HTMLInputElement>("#keys input")!, "sk-proj-abcdefghijklmnopqrstuvwx");
     button("Save", document.getElementById("keys")!)!.click();
     await settle();
     expect(toasts()).toEqual(["API key saved: the next call uses it"]);

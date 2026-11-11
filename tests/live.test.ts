@@ -106,7 +106,7 @@ describe("live transcription", () => {
     expect(rows.length).toBe(2);
   });
 
-  test("stops streaming once OpenRouter or OpenAI refused for good (the budget is exhausted)", () => {
+  test("stops streaming once a provider refused for good (the budget is exhausted)", () => {
     const { lt, sockets, budget } = setup();
     lt.warm("host");
     const ws = sockets[0];

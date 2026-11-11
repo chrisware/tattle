@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Budget, BudgetExhaustedError } from "../src/budget.ts";
 import { loadConfig } from "../src/config.ts";
 import { AssistError, LabelsAssistant, normalizeDraft, type AssistMessage } from "../src/labels/assist.ts";
+import { CHAT_URL } from "../src/factcheck/s2.ts";
 import { checklistText, interviewChecklist } from "../src/labels/interview.ts";
 import { fromLegacy, fromLegacyEvent, fromLegacyStats, isLegacySet } from "../src/labels/legacy.ts";
 import { checkDraft, checkLabelSet, countsOf, labelSetVersion, parseLabelSet, setQuestions, type LabelSet } from "../src/labels/model.ts";
@@ -281,13 +282,20 @@ describe("Create with AI: errors, retries and odd replies", () => {
   function rig(responses: Fake[], o: { budget?: Budget; sleep?: boolean } = {}) {
     const rows: any[] = [];
     const sleeps: number[] = [];
+    const seen: { url: string; init?: RequestInit }[] = [];
     let calls = 0;
-    const f = (async () => { calls++; const r = responses.shift(); if (!r) throw new Error("no more"); return r(); }) as unknown as typeof fetch;
+    const f = (async (url: string, init?: RequestInit) => {
+      calls++;
+      seen.push({ url: String(url), init });
+      const r = responses.shift();
+      if (!r) throw new Error("no more");
+      return r();
+    }) as unknown as typeof fetch;
     const a = new LabelsAssistant(acfg, {
       fetch: f, apiKey: "k", budget: o.budget ?? new Budget(), log: (r) => rows.push(r),
       ...(o.sleep === false ? {} : { sleep: async (ms: number) => { sleeps.push(ms); } }),
     });
-    return { a, rows, sleeps, calls: () => calls };
+    return { a, rows, sleeps, seen, calls: () => calls };
   }
 
   it("the last message must be the host's, and not blank", async () => {
@@ -299,11 +307,20 @@ describe("Create with AI: errors, retries and odd replies", () => {
   });
 
   it("401 → AssistError 401; 402 → 402; any other failure after the retries → 502 'GPT-6 Luna did not answer'", async () => {
-    const e401 = await rig([() => new Response('{"error":{"code":401}}', { status: 401 })]).a.turn("s", ask, null).catch((e) => e);
+    const denied = rig([() => new Response('{"error":{"code":401}}', { status: 401 })]);
+    const e401 = await denied.a.turn("s", ask, null).catch((e) => e);
     expect(e401).toBeInstanceOf(AssistError);
-    expect(e401).toMatchObject({ status: 401, message: "OpenRouter rejected the API key (401): replace it in API keys." });
+    expect(e401).toMatchObject({ status: 401, message: "OpenAI rejected the API key (401): replace it in API keys." });
+    const sent = denied.seen[0]!;
+    expect(sent.url).toBe(CHAT_URL);
+    expect(sent.init?.headers).toEqual({ Authorization: "Bearer k", "Content-Type": "application/json" });
+    const posted = JSON.parse(String(sent.init?.body));
+    expect(posted.model).toBe("gpt-6-luna");
+    expect(posted).toMatchObject({ reasoning_effort: acfg.effort });
+    expect(posted).not.toHaveProperty("provider");
+    expect(posted).not.toHaveProperty("reasoning");
     const e402 = await rig([() => new Response('{"error":{"code":402}}', { status: 402 })]).a.turn("s", ask, null).catch((e) => e);
-    expect(e402).toMatchObject({ status: 402, message: "OpenRouter says the credit or the key's limit is used up (402): add credit at openrouter.ai." });
+    expect(e402).toMatchObject({ status: 402, message: "OpenAI says the credit or the key's limit is used up (402)." });
     const r = rig([() => new Response("bad gateway", { status: 502 }), () => new Response("bad gateway", { status: 502 })]);
     const e502 = await r.a.turn("s", ask, null).catch((e) => e);
     expect(e502).toMatchObject({ status: 502, message: "GPT-6 Luna did not answer: HTTP 502 bad gateway" });
@@ -314,7 +331,7 @@ describe("Create with AI: errors, retries and odd replies", () => {
     expect(r.rows).toEqual([expect.objectContaining({ kind: "s2_call", purpose: "labels_assist", ok: false, attempts: 2, error: "HTTP 502 bad gateway", usage: null, cost_usd: 0, id: null })]);
   });
 
-  it("a network failure, a body that is not JSON, a 200 error body, and a reply without cost", async () => {
+  it("a network failure, a body that is not JSON, a 200 error body, and a reply without a dollar cost", async () => {
     const net = rig([() => Promise.reject("reset"), () => { throw new TypeError("fetch failed"); }]);
     await expect(net.a.turn("s", ask, null)).rejects.toThrow("GPT-6 Luna did not answer: TypeError: fetch failed");
     const garbage = rig([() => new Response("<html>"), ok(turnOf())]);
@@ -323,8 +340,11 @@ describe("Create with AI: errors, retries and odd replies", () => {
     const errBody = rig([() => new Response('{"error":{"message":"upstream"}}'), ok(turnOf())]);
     await errBody.a.turn("s", ask, null);
     expect(errBody.calls()).toBe(2);
-    const noCost = rig([() => new Response(JSON.stringify({ choices: [] }))]);
-    await expect(noCost.a.turn("s", ask, null)).rejects.toThrow("GPT-6 Luna did not answer: response without usage.cost rejected");
+    const noCost = rig([ok(turnOf(), { prompt_tokens: 50, completion_tokens: 9 })]);
+    const noted = await noCost.a.turn("s", ask, null);
+    expect(noted.reply).toBe("Noted.");
+    expect(noted.costUsd).toBe(0);
+    expect(noCost.rows[0]).toMatchObject({ ok: true, cost_usd: 0, usage: { prompt_tokens: 50, completion_tokens: 9 } });
     expect(noCost.calls()).toBe(1);
   });
 

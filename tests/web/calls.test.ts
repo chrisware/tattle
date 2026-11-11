@@ -200,7 +200,7 @@ describe("the Jev log", () => {
     expect(text(".call-detail h4", row)).toBe("Every answer · 3 questions asked at once");
     expect(all(".qa-row.all .qa", row)).toHaveLength(1); // memory questions folded into one line
     expect(text(".call-detail > p.note:nth-of-type(2)", row)).toBe(`Plus 2 memory questions, one per claim already flagged ("is this a repeat of it?"): a repeat of c_1`);
-    expect(text(".http-line", row)).toBe("POST https://openrouter.ai/api/alpha/decisions");
+    expect(text(".http-line", row)).toBe("POST https://api.typesafe.ai/v1/systemone");
     const [req, res] = all(".http pre", row).map((p) => JSON.parse(p.textContent!));
     expect(req).toEqual({ model: "typesafe/jev-1.13", state: jev().state, questions: { claim: { type: "noul", instructions: "Is it a claim?" } } });
     expect(res).toEqual({ answers: st.calls.s1[0]!.answers, usage: { tokens: 10 } });
@@ -220,7 +220,7 @@ describe("the Jev log", () => {
     calls.renderThinking(st);
     document.querySelector<HTMLButtonElement>("#jev-log .call-head")!.click();
     const req = JSON.parse(all("#jev-log .http pre")[0]!.textContent!);
-    expect(req.model).toBe("typesafe/jev-1.13");
+    expect(req.model).toBe("jev-1.13.0");
     expect(req.questions).toEqual({ claim: { type: "noul", instructions: "Is it a claim?" }, public: "(wording not recorded for this call)", worth: "(wording not recorded for this call)", boundary: "(wording not recorded for this call)" });
     expect(text("#jev-log .http .note")).toBe("The question wording is shown in full only for calls made while this page was open.");
     expect(all("#jev-log .call-detail > p.note").map((p) => p.textContent)).toContain(`Plus 1 memory question, one per claim already flagged ("is this a repeat of it?"): no repeat found.`);
@@ -285,12 +285,12 @@ describe("System 2 rows (inside the thinking tab's handoffs)", () => {
     const req = JSON.parse(all(".http pre", open)[0]!.textContent!);
     expect(req).toEqual({
       model: "openai/gpt-6-luna",
-      messages: [{ role: "system", content: `(${(23).toLocaleString()} characters, below)` }, { role: "user", content: "Check: GPT-6 has ten trillion parameters." }],
-      plugins: [{ id: "web", engine: "exa" }],
+      input: [{ role: "system", content: `(${(23).toLocaleString()} characters, below)` }, { role: "user", content: "Check: GPT-6 has ten trillion parameters." }],
+      tools: [{ type: "web_search" }],
     });
     expect(JSON.parse(all(".http pre", open)[1]!.textContent!)).toEqual({ verdict: "misleading" });
     expect(text("details pre", open)).toBe("You are a fact-checker.");
-    expect(text(".http-line", open)).toBe("POST https://openrouter.ai/api/v1/chat/completions");
+    expect(text(".http-line", open)).toBe("POST https://api.openai.com/v1/responses");
   });
 
   test("a reply that is not JSON shows as it is; a failed call shows its error; no usage adds nothing", () => {

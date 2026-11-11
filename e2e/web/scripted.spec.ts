@@ -50,11 +50,11 @@ test("speaker mode shows while the call plays through the speakers", async ({ pa
   await expect(page.locator("#speaker-mode")).toBeHidden();
 });
 
-test("OpenRouter's refusal marks the spend", async ({ page, harness }) => {
+test("a provider refusal marks the spend", async ({ page, harness }) => {
   await goLive(page);
-  await emit(harness, "budget.exhausted", { cap: "provider", message: "OpenRouter credits or key limit exhausted (402)" });
+  await emit(harness, "budget.exhausted", { cap: "provider", message: "The Jev provider refused the request (402)" });
   await expect(page.locator("#cost")).toHaveClass(/exhausted/);
-  await expect(page.locator("#cost .error-text")).toHaveText("OpenRouter stopped: OpenRouter credits or key limit exhausted (402)");
+  await expect(page.locator("#cost .error-text")).toHaveText("The Jev provider refused the request (402)");
 });
 
 test("a System 1 rewrite promoted by the gate shows in Insights → Fact-checker", async ({ page, harness }) => {

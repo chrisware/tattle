@@ -25,7 +25,7 @@ export function fakeServicesFetch(script: ReturnType<typeof loadScript>, opts: {
         Math.abs((a.endMs - a.startMs) / 1000 - seconds) - Math.abs((b.endMs - b.startMs) / 1000 - seconds))[0];
       return json({ text: line.text });
     }
-    if (url.includes("alpha/decisions")) {
+    if (url.includes("alpha/decisions") || url.includes("/v1/systemone")) {
       const body = JSON.parse(init.body as string);
       if (!echoed) {
         echoed = true;
@@ -53,13 +53,13 @@ export function fakeServicesFetch(script: ReturnType<typeof loadScript>, opts: {
       }
       return json({ answers, id: "gen-dec-x", model: "typesafe/jev-1.13-20260917", provider: "TypeSafe", usage: { cost: 0.00002, input_tokens: 400, output_tokens: 10 } });
     }
-    if (url.includes("chat/completions")) {
+    if (url.includes("chat/completions") || url.includes("/responses")) {
       const body = JSON.parse(init.body as string);
-      const schema = body.response_format.json_schema?.name;
+      const schema = body.response_format?.json_schema?.name ?? body.text?.format?.name;
       const content = schema === "verdict"
         ? { restated_claim: "A claim.", verdict: "supported", correction: "", confidence: "high", false_alarm_reason: "none", sources: [{ url: "https://example.com/a", title: "A" }] }
         : schema === "audit" ? { items: [] } : { changes: [], rationale: "none" };
-      return json({ id: "gen-1", model: "openai/gpt-6-luna", provider: "OpenAI", choices: [{ message: { content: JSON.stringify(content), annotations: [] } }], usage: { prompt_tokens: 10, completion_tokens: 10, cost: 0.0003 } });
+      return json({ id: "gen-1", model: "gpt-6-luna", provider: "OpenAI", choices: [{ message: { content: JSON.stringify(content), annotations: [] } }], usage: { prompt_tokens: 10, completion_tokens: 10, cost: 0.0003 } });
     }
     throw new Error(`unexpected URL ${url}`);
   };

@@ -3,7 +3,9 @@ import type { AppConfig } from "../config.ts";
 import type { Budget } from "../budget.ts";
 import type { JevAnswer, JevResponse, JevUsage, QuestionSet } from "./types.ts";
 
-export const DECISIONS_URL = "https://openrouter.ai/api/alpha/decisions";
+export const SYSTEMONE_URL = "https://api.typesafe.ai/v1/systemone";
+/** $42 per billion input tokens when the response omits usage.cost. Output tokens are free. */
+export const INPUT_USD_PER_TOKEN = 42 / 1e9;
 
 export type JevPurpose = "utterance" | "segment" | "relabel" | "gate" | "preflight" | "smoke" | "try";
 const LIVE: ReadonlySet<JevPurpose> = new Set(["utterance", "segment"]);
@@ -28,7 +30,6 @@ export function classifyError(e: unknown): RetryClass {
     return classifyError(new HttpError(code, e.body, e.retryAfterMs));
   }
   if (s === 429 || s >= 500) return "retry";
-  if (s === 402 && isTransient402(e.body)) return "retry";
   return "fail";
 }
 
@@ -43,15 +44,6 @@ export function embeddedErrorCode(body: string): number | null {
   }
 }
 
-function isTransient402(body: string): boolean {
-  const start = body.indexOf("{");
-  if (start < 0) return false;
-  try {
-    return JSON.parse(body.slice(start))?.error?.metadata?.limit_source === "openrouter_in_flight_budget";
-  } catch {
-    return false;
-  }
-}
 
 /** The effective status: a 2xx error body is classified by its embedded code. */
 export function effectiveStatus(e: HttpError): number | null {
@@ -197,10 +189,10 @@ export class JevClient {
         if (cls === "fail" || attempt >= maxAttempts || (live && !liveRetryable)) {
           this.log(state, questions, meta, { ok: false, attempts: attempt, started, error: errorText(e) });
           if (e instanceof HttpError && status === 402 && cls === "fail") {
-            this.deps.budget.exhaust("provider", `jev:${meta.purpose}`, "OpenRouter credits or key limit exhausted (402)");
+            this.deps.budget.exhaust("provider", `jev:${meta.purpose}`, "The Jev provider refused the request (402)");
           }
           if (e instanceof HttpError && status === 401) {
-            throw new HttpError(401, e.body, null, "OpenRouter rejected the API key (401): check OPENROUTER_API_KEY");
+            throw new HttpError(401, e.body, null, "TypeSafe rejected the API key (401): check TYPESAFE_API_KEY");
           }
           throw e;
         }
@@ -215,12 +207,10 @@ export class JevClient {
   private async send(state: unknown, questions: QuestionSet, timeoutMs: number): Promise<JevResponse> {
     let res: Response;
     try {
-      res = await this.deps.fetch(DECISIONS_URL, {
+      res = await this.deps.fetch(SYSTEMONE_URL, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${this.deps.apiKey}`, "Content-Type": "application/json", "X-OpenRouter-Title": "Tattle",
-        },
-        body: JSON.stringify({ model: this.cfg.model, state, questions, ...(this.cfg.provider ? { provider: this.cfg.provider } : {}) }),
+        headers: { Authorization: `Bearer ${this.deps.apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ model: this.cfg.model, state, questions }),
         signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (e) {
@@ -243,13 +233,13 @@ export class JevClient {
       throw new HttpError(res.status, text, retryAfterMs);
     }
     if (body.error) throw new HttpError(res.status, text, retryAfterMs); // an upstream error delivered with HTTP 200
-    if (typeof body.usage?.cost !== "number") throw new HttpError(-1, text, null, "response without usage.cost rejected");
+    const usage = usageOf(body.usage, text);
     return {
       answers: body.answers ?? {},
       id: body.id ?? null,
       model: body.model,
       provider: body.provider ?? null,
-      usage: { input_tokens: body.usage.input_tokens ?? 0, output_tokens: body.usage.output_tokens ?? 0, cost: body.usage.cost },
+      usage,
     };
   }
 
@@ -288,4 +278,14 @@ export function requestHash(model: string, state: unknown, questions: QuestionSe
 function errorText(e: unknown): string {
   if (e instanceof HttpError) return e.message;
   return e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+}
+
+function usageOf(usage: unknown, text: string): JevUsage {
+  if (!usage || typeof usage !== "object") throw new HttpError(-1, text, null, "response without usage rejected");
+  const row = usage as { cost?: unknown; input_tokens?: unknown; output_tokens?: unknown };
+  const input = typeof row.input_tokens === "number" ? row.input_tokens : 0;
+  const output = typeof row.output_tokens === "number" ? row.output_tokens : 0;
+  if (typeof row.cost === "number") return { input_tokens: input, output_tokens: output, cost: row.cost };
+  if (typeof row.input_tokens === "number") return { input_tokens: input, output_tokens: output, cost: input * INPUT_USD_PER_TOKEN };
+  throw new HttpError(-1, text, null, "response without usage.cost or input_tokens rejected");
 }

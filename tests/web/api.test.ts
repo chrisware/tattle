@@ -45,10 +45,10 @@ describe("call: requests and answers", () => {
   });
 
   test("an error response throws ApiError with its status, its JSON error, and its JSON body", async () => {
-    fakeFetch(() => json({ error: "OpenRouter key missing", needsKey: "openrouter" }, 400));
+    fakeFetch(() => json({ error: "OpenAI key missing", needsKey: "openai" }, 400));
     const e = await api.startLive().catch((x) => x);
     expect(e).toBeInstanceOf(ApiError);
-    expect([e.status, e.message, e.body]).toEqual([400, "OpenRouter key missing", { error: "OpenRouter key missing", needsKey: "openrouter" }]);
+    expect([e.status, e.message, e.body]).toEqual([400, "OpenAI key missing", { error: "OpenAI key missing", needsKey: "openai" }]);
   });
 
   test("an error body that is not JSON is the message itself, with no body", async () => {
@@ -80,7 +80,7 @@ describe("call: requests and answers", () => {
 describe("every command's method, path and body", () => {
   const cases: [string, () => Promise<unknown>, string, string, unknown][] = [
     ["setup", () => api.setup(), "GET", "/api/setup", undefined],
-    ["saveKeys", () => api.saveKeys({ openrouter: "sk-or-x" }), "POST", "/api/setup/keys", { openrouter: "sk-or-x" }],
+    ["saveKeys", () => api.saveKeys({ openai: "sk-proj-x" }), "POST", "/api/setup/keys", { openai: "sk-proj-x" }],
     ["transcription", () => api.transcription(), "GET", "/api/transcription", undefined],
     ["setTranscription", () => api.setTranscription("apple"), "PUT", "/api/transcription", { engine: "apple" }],
     ["installModel", () => api.installModel(), "POST", "/api/transcription/install", undefined],

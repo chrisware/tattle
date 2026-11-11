@@ -11,7 +11,7 @@ vi.mock("../../web/src/api.ts", async (orig) => ({ ...(await orig<typeof import(
 const bridge = { onCommand: vi.fn(), run: vi.fn() };
 const unconfigured: SetupStatus = {
   configured: false, required: ["openai"], path: "~/x",
-  keys: [{ name: "openai", env: "OPENAI_API_KEY", set: false, source: null, hint: null }, { name: "openrouter", env: "OPENROUTER_API_KEY", set: false, source: null, hint: null }],
+  keys: [{ name: "openai", env: "OPENAI_API_KEY", set: false, source: null, hint: null }, { name: "typesafe", env: "TYPESAFE_API_KEY", set: false, source: null, hint: null }],
 };
 
 /** Boots the page as the browser would load /dist/main.js, with app.ts stubbed; returns whether the app loaded. */

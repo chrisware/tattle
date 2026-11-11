@@ -72,7 +72,7 @@ describe("an engine without the optional parts", () => {
 
   test("an error keeps its status when it carries one; anything else is a 400", async () => {
     const cases: [unknown, number, Record<string, unknown>][] = [
-      [new ApiError(402, "out of credit", { needsKey: "openrouter" }), 402, { error: "out of credit", needsKey: "openrouter" }],
+      [new ApiError(402, "out of credit", { needsKey: "openai" }), 402, { error: "out of credit", needsKey: "openai" }],
       [new ChatError(418, "teapot"), 418, { error: "teapot" }],
       [new KeyError(409, "set in .env"), 409, { error: "set in .env" }],
       [new LabelSetError(404, "no such set"), 404, { error: "no such set" }],
@@ -269,7 +269,7 @@ describe("chat routes", () => {
       };
     },
   };
-  const engine = Object.assign(new FakeEngine(), { chat, openrouterKeySet: () => keySet });
+  const engine = Object.assign(new FakeEngine(), { chat, openaiKeySet: () => keySet });
   const server = createApiServer(engine as EngineApi, { webRoot: webRoot() });
   let base = "";
   let close: () => Promise<void>;
@@ -307,7 +307,7 @@ describe("chat routes", () => {
       sink({ type: "done", chat: null } as ChatEvent);
       finished.resolve();
     } };
-    const e2 = Object.assign(new FakeEngine(), { chat: leaving, openrouterKeySet: () => true });
+    const e2 = Object.assign(new FakeEngine(), { chat: leaving, openaiKeySet: () => true });
     const { base: b2, close: c2 } = await listen(createApiServer(e2 as EngineApi, { webRoot: webRoot() }));
     try {
       const s = await new Promise<{ destroy: () => void }>((resolve, reject) => {
@@ -343,7 +343,7 @@ describe("chat routes", () => {
     expect((await http(base, "PUT", "/api/chats/c1/stop")).status).toBe(404);
     keySet = false;
     const refused = await http(base, "POST", "/api/chats", { body: {} });
-    expect([refused.status, refused.json]).toEqual([400, { error: "Please provide your OpenRouter API key to use Chat.", needsKey: "openrouter" }]);
+    expect([refused.status, refused.json]).toEqual([400, { error: "Please provide your OpenAI API key to use Chat.", needsKey: "openai" }]);
     expect((await http(base, "POST", "/api/chats/c1/messages", { body: { content: "hi" } })).status).toBe(400);
     expect((await http(base, "GET", "/api/chats")).status).toBe(200); // reading past chats needs no key
   });

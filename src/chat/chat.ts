@@ -3,11 +3,8 @@ import { join } from "node:path";
 import type { AppConfig } from "../config.ts";
 import type { Budget } from "../budget.ts";
 import { backoffMs, classifyError, effectiveStatus, HttpError, parseRetryAfter } from "../jev/client.ts";
-import { CHAT_URL } from "../factcheck/s2.ts";
+import { openaiWireModel, s2ChatUrl, s2HostIsOpenAI } from "../factcheck/s2.ts";
 import { processSecrets } from "../store/events.ts";
-
-export const MODELS_URL = "https://openrouter.ai/api/v1/models";
-export const GENERATION_URL = "https://openrouter.ai/api/v1/generation";
 
 /**
  * The chat window: the host's own questions about the transcript, to any model in `chat.models`. It is a tool for the
@@ -43,7 +40,7 @@ export interface ChatSource {
 export interface ModelInfo {
   id: string; name: string; contextLength: number | null; maxOutput: number | null;
   inputUsdPerM: number | null; outputUsdPerM: number | null; cacheReadUsdPerM: number | null;
-  /** False when OpenRouter's catalogue no longer lists it; null when the catalogue could not be read. */
+  /** Always null: the picker does not fetch a catalogue, so availability is unknown. */
   available: boolean | null;
 }
 
@@ -71,7 +68,7 @@ export interface ChatCallRow {
   id: string | null; model_returned: string | null; provider_returned: string | null;
   usage: { prompt_tokens: number; completion_tokens: number; reasoning_tokens: number; cached_tokens: number } | null;
   cost_usd: number;
-  /** The cost was estimated from the price list because the reply was stopped and OpenRouter had no record of it yet. */
+  /** The cost was estimated because the reply omitted `usage.cost`. OpenAI does not send a dollar cost. */
   estimated?: boolean;
   stopped?: boolean;
   error?: string;
@@ -126,6 +123,10 @@ export interface ChatDeps {
   onSpend?: (source: ChatSource) => void;
   sleep?: (ms: number) => Promise<void>;
   rand?: () => number;
+  /** Saved chat model. Absent: the configured default, when that default is offered. */
+  modelChoice?: () => string | undefined;
+  /** Saved custom ids offered beside the configured OpenAI models. */
+  extraModels?: () => string[];
 }
 
 /** "4:07", or "1:04:07" past an hour. */
@@ -220,7 +221,7 @@ export function foldChats(rows: Row[]): Map<string, ChatRecord> {
 export const chatSpend = (rows: Row[]) => rows.reduce((t, r) => t + (r.kind === "chat_call" && typeof r.cost_usd === "number" ? r.cost_usd : 0), 0);
 
 export class ChatService {
-  private catalogue: { at: number; ok: boolean; byId: Map<string, any> } | null = null;
+
   /** Replies being written, by `<session>/<chat>`. */
   private readonly inflight = new Map<string, AbortController>();
 
@@ -232,34 +233,26 @@ export class ChatService {
 
   // ---------- models ----------
 
-  /** The configured models with their context window and prices, from OpenRouter's catalogue (kept for an hour). */
+  /** Configured OpenAI models, plus any saved custom id. Prices are unknown: OpenAI's model list does not return them. */
   async models(): Promise<{ default: string; models: ModelInfo[] }> {
-    const fresh = this.catalogue && Date.now() - this.catalogue.at < (this.catalogue.ok ? 3_600_000 : 60_000);
-    if (!fresh) {
-      try {
-        const res = await this.deps.fetch(MODELS_URL, { signal: AbortSignal.timeout(10_000) });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const json: any = await res.json();
-        this.catalogue = { at: Date.now(), ok: true, byId: new Map((json?.data ?? []).map((m: any) => [m.id, m])) };
-      } catch {
-        this.catalogue = { at: Date.now(), ok: false, byId: this.catalogue?.byId ?? new Map() };
-      }
-    }
-    const cat = this.catalogue!;
-    const perM = (v: unknown) => {
-      const n = Number(v);
-      return v === undefined || v === null || !Number.isFinite(n) || n < 0 ? null : Math.round(n * 1e6 * 1e4) / 1e4;
-    };
-    const models = this.cfg.models.map((id): ModelInfo => {
-      const m = cat.byId.get(id);
-      return {
-        id, name: m?.name ?? id, contextLength: m?.context_length ?? m?.top_provider?.context_length ?? null,
-        maxOutput: m?.top_provider?.max_completion_tokens ?? null,
-        inputUsdPerM: perM(m?.pricing?.prompt), outputUsdPerM: perM(m?.pricing?.completion), cacheReadUsdPerM: perM(m?.pricing?.input_cache_read),
-        available: m ? true : cat.byId.size ? false : null,
-      };
-    });
-    return { default: this.cfg.defaultModel, models };
+    const models = this.offered().map((id): ModelInfo => ({
+      id, name: id, contextLength: null, maxOutput: null,
+      inputUsdPerM: null, outputUsdPerM: null, cacheReadUsdPerM: null, available: null,
+    }));
+    return { default: this.chosenDefault(), models };
+  }
+
+  private offered(): string[] {
+    const extra = this.deps.extraModels?.() ?? [];
+    return [...new Set([...this.cfg.models.filter((id) => id.startsWith("openai/")), ...extra].filter((id) => /^[A-Za-z0-9_.:/-]{1,128}$/.test(id)))];
+  }
+
+  private chosenDefault(): string {
+    const offered = this.offered();
+    const saved = this.deps.modelChoice?.()?.trim();
+    if (saved && offered.includes(saved)) return saved;
+    if (offered.includes(this.cfg.defaultModel)) return this.cfg.defaultModel;
+    return offered[0] ?? this.cfg.defaultModel;
   }
 
   private async model(id: string): Promise<ModelInfo | undefined> {
@@ -344,8 +337,8 @@ export class ChatService {
   /** A new, empty chat: nothing is sent, so nothing is spent, until its first question. */
   async create(model?: string) {
     const s = this.need();
-    const m = model ?? this.cfg.defaultModel;
-    if (!this.cfg.models.includes(m)) throw new ChatError(400, `unknown model ${m}`);
+    const m = model ?? this.chosenDefault();
+    if (!this.offered().includes(m)) throw new ChatError(400, `unknown model ${m}`);
     const rows = this.rows(s);
     const n = rows.filter((r) => r.kind === "chat" && r.op === "create").length + 1;
     const row: Row = { kind: "chat", op: "create", chat_id: `chat_${n}`, title: "New chat", model: m, at: new Date().toISOString() };
@@ -363,7 +356,7 @@ export class ChatService {
       this.append(s, { kind: "chat", op: "rename", chat_id: c.id, title: patch.title.trim(), at });
     }
     if (patch.model !== undefined) {
-      if (typeof patch.model !== "string" || !this.cfg.models.includes(patch.model)) throw new ChatError(400, `unknown model ${String(patch.model)}`);
+      if (typeof patch.model !== "string" || !this.offered().includes(patch.model)) throw new ChatError(400, `unknown model ${String(patch.model)}`);
       if (patch.model !== c.model) this.append(s, { kind: "chat", op: "model", chat_id: c.id, model: patch.model, at });
     }
     return this.view(s, this.get(s, id));
@@ -455,8 +448,8 @@ export class ChatService {
     const info = await this.model(c.model);
     const messages = this.history(c);
     const bodyText = JSON.stringify({
-      model: c.model, messages, stream: true, usage: { include: true },
-      provider: this.cfg.provider, reasoning: { effort: this.cfg.effort },
+      model: openaiWireModel(c.model), messages, stream: true, stream_options: { include_usage: true },
+      ...(s2HostIsOpenAI() ? { reasoning_effort: this.cfg.effort } : { reasoning: { effort: this.cfg.effort } }),
     });
     const started = Date.now();
     let content = "";
@@ -479,7 +472,7 @@ export class ChatService {
         if (content || cls === "fail" || attempt >= this.cfg.maxAttempts) {
           error = describe(e, c.model);
           if (e instanceof HttpError && effectiveStatus(e) === 402 && cls === "fail") {
-            try { s.budget?.exhaust("provider", "chat", "OpenRouter credits or key limit exhausted (402)"); } catch { /* reported by the event */ }
+            try { s.budget?.exhaust("provider", "chat", "OpenAI credits or the key's limit are exhausted (402)"); } catch { /* reported by the event */ }
           }
           break;
         }
@@ -487,22 +480,17 @@ export class ChatService {
       }
     }
 
-    // What it cost: the stream's final usage, else OpenRouter's record of the generation, else an estimate.
+    // A gateway may send usage.cost. OpenAI does not, so a reply that returned, or a stopped
+    // partial, is priced from its token counts, or from the request when those are missing.
+    // A failed call that returned neither usage nor text spent nothing: do not invent a meter.
     let usage = out.usage;
     let cost: number | null = typeof usage?.cost === "number" ? usage.cost : null;
     let estimated = false;
-    if (cost === null && out.genId) {
-      const g = await this.generation(out.genId);
-      if (g) {
-        cost = g.cost;
-        usage = { prompt_tokens: g.prompt, completion_tokens: g.completion, cost };
-      }
-    }
-    if (cost === null && out.genId) {
-      const promptTok = approxTokens(bodyText);
-      const outTok = approxTokens(content);
+    if (cost === null && (usage || content || !error)) {
+      const promptTok = typeof usage?.prompt_tokens === "number" ? usage.prompt_tokens : approxTokens(bodyText);
+      const outTok = typeof usage?.completion_tokens === "number" ? usage.completion_tokens : approxTokens(content);
       cost = (promptTok * (info?.inputUsdPerM ?? 0) + outTok * (info?.outputUsdPerM ?? 0)) / 1e6;
-      usage = { prompt_tokens: promptTok, completion_tokens: outTok, cost };
+      usage = usage ?? { prompt_tokens: promptTok, completion_tokens: outTok };
       estimated = true;
     }
     const call: ChatCallRow = {
@@ -551,9 +539,9 @@ export class ChatService {
   private async stream(body: string, stop: AbortSignal, out: { genId: string | null; modelReturned: string | null; provider: string | null; usage: any }, emit: (e: ChatEvent) => void) {
     let res: Response;
     try {
-      res = await this.deps.fetch(CHAT_URL, {
+      res = await this.deps.fetch(s2ChatUrl(), {
         method: "POST",
-        headers: { Authorization: `Bearer ${this.deps.apiKey}`, "Content-Type": "application/json", "X-OpenRouter-Title": "Tattle" },
+        headers: { Authorization: `Bearer ${this.deps.apiKey}`, "Content-Type": "application/json" },
         body,
         signal: AbortSignal.any([stop, AbortSignal.timeout(this.cfg.timeoutMs)]),
       });
@@ -601,23 +589,7 @@ export class ChatService {
     }
   }
 
-  /** OpenRouter's record of a generation (for a stopped reply, whose stream never reached its usage). */
-  private async generation(id: string): Promise<{ cost: number; prompt: number; completion: number } | null> {
-    for (let i = 0; i < 3; i++) {
-      await this.sleep(1000 * (i + 1));
-      try {
-        const res = await this.deps.fetch(`${GENERATION_URL}?id=${encodeURIComponent(id)}`, {
-          headers: { Authorization: `Bearer ${this.deps.apiKey}` }, signal: AbortSignal.timeout(5000),
-        });
-        if (!res.ok) continue;
-        const d: any = (await res.json())?.data;
-        if (typeof d?.total_cost === "number") {
-          return { cost: d.total_cost, prompt: d.native_tokens_prompt ?? d.tokens_prompt ?? 0, completion: d.native_tokens_completion ?? d.tokens_completion ?? 0 };
-        }
-      } catch { /* try again */ }
-    }
-    return null;
-  }
+
 }
 
 /** A failed reply in words the host can act on. */
@@ -626,11 +598,8 @@ function describe(e: unknown, model: string): string {
     const s = effectiveStatus(e);
     let msg = "";
     try { msg = JSON.parse(e.body.slice(e.body.indexOf("{")))?.error?.message ?? ""; } catch { /* not JSON */ }
-    if (s === 401) return "OpenRouter rejected the API key (401): check OPENROUTER_API_KEY.";
-    if (s === 402) return "OpenRouter credits or the key's limit are exhausted (402).";
-    if (s === 404 && /data policy|endpoints/i.test(msg)) {
-      return `No provider of ${model} accepts this project's privacy setting (data_collection: deny). Pick another model.`;
-    }
+    if (s === 401) return "OpenAI rejected the API key (401): check OPENAI_API_KEY.";
+    if (s === 402) return "OpenAI credits or the key's limit are exhausted (402).";
     if (s === 429) return `${model} is rate-limited right now (429). Try again in a moment, or pick another model.`;
     return msg ? `${model}: ${msg}` : e.message.slice(0, 300);
   }

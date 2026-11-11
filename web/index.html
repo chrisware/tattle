@@ -109,7 +109,7 @@
           <button role="menuitem" data-open="dlg-labels"><b>Labels</b><span id="m-labels"></span></button>
           <button role="menuitem" data-open="dlg-transcription"><b>Transcription</b><span id="m-transcription"></span></button>
           <!-- the Mac app hides these (body.in-app): Settings… (⌘,) and About / Help → Licenses have them -->
-          <button role="menuitem" class="browser-only" data-open="dlg-keys"><b>API keys</b><span>OpenAI, OpenRouter · optional</span></button>
+          <button role="menuitem" class="browser-only" data-open="dlg-keys"><b>API keys</b><span>OpenAI, TypeSafe · optional</span></button>
           <div class="menu-foot browser-only"><span id="app-version"></span><button id="license-link" class="linkbtn">Licenses</button></div>
         </div>
       </div>
@@ -242,7 +242,7 @@
 
   <dialog id="dlg-chat" class="chat-dlg" aria-labelledby="h-chat">
     <div class="dlg-head"><h2 id="h-chat">Chat</h2><span id="chat-sub" class="sub">Ask about the transcript</span><button class="x" data-close aria-label="Close">×</button></div>
-    <!-- asked for here when no OpenRouter key is set: inside the dialog, which is modal (docs/gotchas.md) -->
+    <!-- asked for here when no OpenAI key is set: inside the dialog, which is modal (docs/gotchas.md) -->
     <div id="chat-key" class="dlg-body" hidden></div>
     <div id="chat" class="chat"></div>
   </dialog>
@@ -275,7 +275,7 @@
       <label id="start-stories-box" class="fieldlabel start-stories">Tonight's stories (optional)
         <textarea id="start-stories" class="input" rows="2" placeholder="One headline per line: Jev says which one each part of the show is about"></textarea>
       </label>
-      <!-- the OpenRouter key, asked for here when a switch needs it: inside the dialog, which is modal (docs/gotchas.md) -->
+      <!-- the key prompt, asked for here when a switch needs a key: inside the dialog, which is modal (docs/gotchas.md) -->
       <div id="start-key" hidden></div>
       <p id="start-summary" class="start-summary"></p>
       <p class="note">A feature you turn off stays off until the session ends. Pause, Resume, Stop, and chat work either way.</p>

@@ -189,8 +189,11 @@ describe("the docs page, /docs", () => {
     expect(text).toContain("⌘,"); // Settings…, the one accelerator the app sets itself
     const verdicts = read("web/src/panels.ts").match(/const VERDICT_LABEL[^{]*\{([^}]*)\}/)![1]!;
     for (const [, label] of verdicts.matchAll(/: "([^"]+)"/g)) expect(text, label).toContain(label!);
-    const models: string[] = JSON.parse(read("config/app.json")).chat.models;
-    for (const id of models) expect(text, id).toContain(id);
+    const configured: string[] = JSON.parse(read("config/app.json")).chat.models;
+    const offered = configured.filter((id) => id.startsWith("openai/"));
+    expect(offered.length).toBeGreaterThan(0);
+    for (const id of offered) expect(text, id).toContain(id);
+    for (const id of configured) if (!offered.includes(id)) expect(text, id).not.toContain(id);
   });
 
   it("documents the keyboard shortcuts", () => {
@@ -309,7 +312,7 @@ describe("search: the SEO pass of 12 October 2026", () => {
     const dl = textOf(page.match(/<div class="dl" data-when="mac">[\s\S]*?<\/div>/)![0]);
     expect(dl).toContain("Apple Silicon");
     expect(dl).toContain("English");
-    expect(dl).toMatch(/OpenRouter key/);
+    expect(dl).toMatch(/OpenAI and TypeSafe keys/);
     expect(dl).toContain("$0.35"); // the docs' figure: "Up to about $0.35 an hour"
     expect(textOf(docs)).toContain("Up to about $0.35 an hour");
   });
@@ -405,7 +408,8 @@ describe("search: the SEO pass of 12 October 2026", () => {
     const md = read("website/docs.md");
     expect(md).toMatch(/^# How to use Tattle\n/);
     for (const label of ["Supported", "False", "Misleading"]) expect(md).toContain(label);
-    expect(md).toContain("Needs: OpenRouter key · Up to about $0.35 an hour");
+    expect(md).toContain("Needs: OpenAI and TypeSafe keys · Up to about $0.35 an hour");
+    expect(md).not.toMatch(/OpenRouter key|openrouter\.ai/);
     expect(md.replace(/```[\s\S]*?```/g, "").replace(/`[^`]*`/g, "")).not.toMatch(/<[a-z][^>]*>/); // no HTML left over, outside code
   });
 

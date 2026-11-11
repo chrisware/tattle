@@ -9,8 +9,8 @@ export const CHAT_MODELS: CatalogueModel[] = [
 ];
 
 export interface ServiceSwitches {
-  /** Every Jev call answers a non-transient 402: OpenRouter's credit is used up. */
-  openrouter402?: boolean;
+  /** Every Jev call answers a non-transient 402: the provider refused the request. */
+  jev402?: boolean;
   /** Key checks answer 401 for keys containing this text. */
   refuseKeysWith?: string;
 }
@@ -29,13 +29,13 @@ export function e2eFetch(script: ReturnType<typeof loadScript>, sw: ServiceSwitc
       if (sw.refuseKeysWith && auth.includes(sw.refuseKeysWith)) return new Response(JSON.stringify({ error: { message: "Incorrect API key" } }), { status: 401 });
       return new Response(JSON.stringify({ data: [{ id: "gpt-transcribe" }, { id: "gpt-live-transcribe" }] }));
     }
-    if (u.startsWith("https://openrouter.ai/api/v1/key")) {
-      if (sw.refuseKeysWith && auth.includes(sw.refuseKeysWith)) return new Response(JSON.stringify({ error: { message: "No auth credentials found" } }), { status: 401 });
-      return new Response(JSON.stringify({ data: { limit: 10, limit_remaining: 9.5, is_free_tier: false } }));
+    if (u.startsWith("https://api.typesafe.ai/v1/models")) {
+      if (sw.refuseKeysWith && auth.includes(sw.refuseKeysWith)) return new Response(JSON.stringify({ error: { message: "Incorrect API key" } }), { status: 401 });
+      return new Response(JSON.stringify({ data: [{ id: "jev" }] }));
     }
     if (u.endsWith("/models")) return new Response(JSON.stringify({ data: CHAT_MODELS }));
     if (u.includes("/generation")) return new Response(JSON.stringify({ data: { total_cost: 0.0012 } }));
-    if (u.includes("alpha/decisions") && sw.openrouter402) {
+    if ((u.includes("/v1/systemone") || u.includes("alpha/decisions")) && sw.jev402) {
       return new Response(JSON.stringify({ error: { code: 402, message: "Insufficient credits" } }), { status: 402 });
     }
     if (u.includes("chat/completions") && JSON.parse(String(init.body)).stream) {

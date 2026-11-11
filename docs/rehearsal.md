@@ -12,7 +12,7 @@ Everything to check before going on air with Tattle, the lines to plant, and how
 
 ## The day before
 
-1. **In development**, `npm run preflight` passes. It checks the models, the capture helper and both macOS permissions, the transcription engine (with Apple Speech, that its model is installed), the keys the engine needs (from `.env` or saved from the page), the config, the OpenRouter credit, one transcription (on this Mac with Apple Speech, free; OpenAI's otherwise), one call each to Jev and System 2 (about $0.01; skipped without an OpenRouter key), and 2 GB of free disk. It runs from the terminal, so it checks the terminal's permissions, not the Mac app's. **With the Mac app**, the rehearsal session below is the check: both meters move, and a line is transcribed.
+1. **In development**, `npm run preflight` passes. It checks the models, the capture helper and both macOS permissions, the transcription engine (with Apple Speech, that its model is installed), the keys the engine needs (from `.env` or saved from the page), the config, one transcription (on this Mac with Apple Speech, free; OpenAI's otherwise), one Jev call (about $0.01; skipped without a TypeSafe key), one System 2 research call (skipped without an OpenAI key), and 2 GB of free disk. It runs from the terminal, so it checks the terminal's permissions, not the Mac app's. **With the Mac app**, the rehearsal session below is the check: both meters move, and a line is transcribed.
 2. Record a fallback: run a live rehearsal session (below), stop it, and name it in **Recordings** (the cog menu; for example "Fallback — Ep 12").
 3. Check that it works as a fallback: in Recordings, clicking it opens it instantly for free; **Replay** re-runs it through the pipeline at real-time pace (about its original cost again). If anything fails on air, stop the live session and use one of the two. See [Recordings](recordings.md).
 
@@ -21,12 +21,12 @@ Everything to check before going on air with Tattle, the lines to plant, and how
 - [ ] Everyone wears headphones, and the host wears **earbuds**. On the Mac's speakers the app switches to speaker mode (a **Speakers** chip next to the meters): the microphone is muted while the call plays, so anything the host says over a guest is lost.
 - [ ] Riverside's microphone is set to the **MacBook's built-in mic**, like the capture helper's. If any app opens the AirPods microphone, macOS switches the AirPods to the low-quality call profile.
 - [ ] A **Focus mode** is on and other apps are quiet: the system tap captures every sound the Mac plays, notifications included.
-- [ ] The OpenRouter key has a **credit limit** (openrouter.ai → Settings → API keys): the app sets no spending limit of its own.
+- [ ] The TypeSafe and OpenAI keys are set, and the OpenAI account has prepaid credit (platform.openai.com → Billing): the app sets no spending limit of its own.
 - [ ] The **label set** is picked and **tonight's stories** are ready to type in Start live (one headline per line). A new set was tried on a recording first (cog → Labels).
 - [ ] **Speakers are renamed** as they first speak (click a name in the transcript, or use cog → Speakers). Merge duplicates there (see [Speakers](speakers.md)).
 - [ ] The **app window is shared** in Riverside (the page is laid out for 1280 × 720).
 - [ ] A **fallback session** was recorded the day before and is named in Recordings.
-- [ ] Privacy: OpenRouter calls already send `provider: { data_collection: "deny" }` (`config/app.json`). Podcast audio goes to OpenAI only with the OpenAI engine; with Apple Speech (Settings → Transcription → On this Mac) it never leaves the Mac.
+- [ ] Privacy: podcast audio goes to OpenAI only with the OpenAI engine; with Apple Speech (Settings → Transcription → On this Mac) it never leaves the Mac. Fact-check research goes to OpenAI. Jev goes to TypeSafe.
 
 ## Starting the show
 

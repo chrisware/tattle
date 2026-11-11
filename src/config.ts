@@ -57,8 +57,6 @@ export const AppConfigSchema = z.object({
   jev: z.object({
     model: z.string().min(1), utteranceTimeoutMs: int, segmentTimeoutMs: int, maxAttempts: int,
     backgroundTimeoutMs: int, backgroundMaxAttempts: int, concurrency: int, segmentConcurrency: int,
-    /** OpenRouter provider routing, such as { data_collection: "deny" }; omitted from the request when absent. */
-    provider: z.record(z.string(), z.unknown()).optional(),
   }).strict(),
   segmentation: z.object({
     boundaryThreshold: probability, speakerChangeGapMs: nonNegative, speakerChangeBonus: probability,
@@ -94,7 +92,7 @@ export const AppConfigSchema = z.object({
     provider: z.object({}).passthrough(),
     timeoutMs: int, maxAttempts: int,
   }).strict(),
-  // The chat window: questions about the transcript, to any of `models` through OpenRouter (see docs/chat.md)
+  // The chat window: questions about the transcript, to the offered OpenAI models (see docs/chat.md)
   chat: z.object({
     defaultModel: z.string().min(1),
     models: z.array(z.string().min(1)).min(1),

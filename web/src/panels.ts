@@ -136,7 +136,7 @@ export function bindControls(onOpen: (dialogId: string) => void, viewGone: () =>
   $("#start-replay")?.addEventListener("click", () => {
     const dir = $<HTMLInputElement>("#replay-dir")!.value.trim();
     closePops();
-    // without an OpenRouter key a replay is transcript-only, as the Start live window's switches would be
+    // without a TypeSafe key a replay is transcript-only, as the Start live window's switches would be
     void run(async () => { const c = await replayChoices(); await api.startReplay(dir, replaySpeed, voicesOnCall(), c.features, c.labelling); });
   });
   $("#stop")?.addEventListener("click", () => run(() => api.stop(), "Stopping: in-flight work will finish"));
@@ -187,7 +187,8 @@ const factcheckSwitch = () => $<HTMLButtonElement>("#feat-factcheck")!;
 const factcheckOn = () => factcheckSwitch().getAttribute("aria-checked") === "true";
 const labelPick = () => $<HTMLSelectElement>("#start-labelset");
 const labelsOn = () => (labelPick()?.value ?? "off") !== "off";
-const OPENROUTER_HEADING = "Please provide your OpenRouter API key to configure fact-checking or labeling.";
+const TYPESAFE_HEADING = "Please provide your TypeSafe API key to configure fact-checking or labeling.";
+const OPENAI_HEADING = "Please provide your OpenAI API key. Fact-checking research uses it. Jev uses TypeSafe.";
 /** The label set picked last time, remembered in the browser like the microphone. */
 const LABELS_KEY = "pa.labelSet";
 const DEFAULT_SET = "ai-podcast";
@@ -211,11 +212,11 @@ function rememberedSet(sets: LabelSetEntry[]): string {
 }
 
 /**
- * What a replay started without the Start live window runs: what the keys allow. Without OpenRouter, transcript only;
+ * What a replay started without the Start live window runs: what the keys allow. Without the TypeSafe key, transcript only;
  * with it, fact-checking and the label set picked last time.
  */
 export async function replayChoices(): Promise<{ features: Features; labelling: Labelling }> {
-  if (!keySet("openrouter")) return { features: { factcheck: false, labels: false }, labelling: { labelSet: null } };
+  if (!keySet("typesafe")) return { features: { factcheck: false, labels: false }, labelling: { labelSet: null } };
   const sets = (await api.labelSets().catch(() => null))?.sets ?? [];
   return { features: { factcheck: true, labels: true }, labelling: sets.length ? { labelSet: rememberedSet(sets) } : {} };
 }
@@ -251,16 +252,32 @@ function renderStartSummary() {
   replace($("#start-summary"), h("b", {}, what), h("br", {}), apple ? "Transcript: free, on this Mac. " : "", cost);
 }
 
-/** Asks for the OpenRouter key inside the Start live window; Not now turns off everything that needs it. */
-function askOpenRouter(then?: () => void) {
+/** Asks for the TypeSafe key inside the Start live window; Not now turns off everything that needs it. */
+function askTypesafe(then?: () => void) {
   const box = $("#start-key");
   if (!box) return;
   box.hidden = false;
-  replace(box, keyPrompt("openrouter", OPENROUTER_HEADING, {
+  replace(box, keyPrompt("typesafe", TYPESAFE_HEADING, {
     onSaved: () => { box.hidden = true; replace(box); renderStartSummary(); then?.(); },
     onCancel: () => {
       factcheckSwitch().setAttribute("aria-checked", "false");
       setPick("off");
+      box.hidden = true;
+      replace(box);
+      renderStartSummary();
+    },
+  }));
+}
+
+/** Fact-check research uses the OpenAI key. Not now turns fact-checking off and leaves labels alone. */
+function askOpenAI(then?: () => void) {
+  const box = $("#start-key");
+  if (!box) return;
+  box.hidden = false;
+  replace(box, keyPrompt("openai", OPENAI_HEADING, {
+    onSaved: () => { box.hidden = true; replace(box); renderStartSummary(); then?.(); },
+    onCancel: () => {
+      factcheckSwitch().setAttribute("aria-checked", "false");
       box.hidden = true;
       replace(box);
       renderStartSummary();
@@ -278,7 +295,7 @@ async function fillLabelPicker(on: boolean) {
 }
 
 /**
- * Start live asks first. Fact-checking and the label set start on when the OpenRouter key is set, off when it is not:
+ * Start live asks first. Fact-checking and the label set start on when the TypeSafe key is set, off when it is not:
  * turning one on then asks for the key, in this window.
  */
 function openStartLive() {
@@ -288,7 +305,7 @@ function openStartLive() {
   if (voices) voices.value = "0";
   const box = $("#start-key");
   if (box) { box.hidden = true; replace(box); }
-  const on = keySet("openrouter");
+  const on = keySet("typesafe");
   factcheckSwitch().setAttribute("aria-checked", String(on));
   const d = $<HTMLDialogElement>("#dlg-start")!;
   void fillLabelPicker(on).then(renderStartSummary);
@@ -297,9 +314,9 @@ function openStartLive() {
   $<HTMLButtonElement>("#start-go")?.focus();
   // what the server says now (a key saved elsewhere, the model's progress), unless the host already asked for a key
   void Promise.all([setupStatus(), refreshTranscription()]).then(async () => {
-    if (d.open && box?.hidden && keySet("openrouter") !== on) {
-      factcheckSwitch().setAttribute("aria-checked", String(keySet("openrouter")));
-      await fillLabelPicker(keySet("openrouter"));
+    if (d.open && box?.hidden && keySet("typesafe") !== on) {
+      factcheckSwitch().setAttribute("aria-checked", String(keySet("typesafe")));
+      await fillLabelPicker(keySet("typesafe"));
     }
     renderStartSummary();
   });
@@ -311,17 +328,17 @@ function bindStartLive() {
     const on = !factcheckOn();
     factcheckSwitch().setAttribute("aria-checked", String(on));
     renderStartSummary();
-    if (on && !keySet("openrouter")) askOpenRouter();
+    if (on && !keySet("typesafe")) askTypesafe();
   });
   labelPick()?.addEventListener("change", () => {
     renderStartSummary();
     // a set picked by the host asks for the key when it is missing
-    if (!settingPick && labelsOn() && !keySet("openrouter") && $("#start-key")?.hidden) askOpenRouter();
+    if (!settingPick && labelsOn() && !keySet("typesafe") && $("#start-key")?.hidden) askTypesafe();
   });
   const start = () => {
     const lb = labelsOn();
     const features = { factcheck: factcheckOn(), labels: lb };
-    if ((features.factcheck || lb) && !keySet("openrouter")) return askOpenRouter(start);
+    if ((features.factcheck || lb) && !keySet("typesafe")) return askTypesafe(start);
     if (preparing()) return;
     const mic = $<HTMLSelectElement>("#mic")?.value;
     const labelSet = lb ? labelPick()!.value : null;
@@ -336,7 +353,8 @@ function bindStartLive() {
         $<HTMLDialogElement>("#dlg-start")!.close();
       } catch (e) {
         // the server knows best which key is missing (one removed from .env, say): ask for it here
-        if (e instanceof ApiError && e.body?.needsKey === "openrouter") { await setupStatus(); return askOpenRouter(start); }
+        if (e instanceof ApiError && e.body?.needsKey === "typesafe") { await setupStatus(); return askTypesafe(start); }
+        if (e instanceof ApiError && e.body?.needsKey === "openai") { await setupStatus(); return askOpenAI(start); }
         if (e instanceof ApiError && e.body?.preparing) { void refreshTranscription(); return; }
         $<HTMLDialogElement>("#dlg-start")!.close();
         toast(e instanceof Error ? e.message : String(e));
@@ -1047,8 +1065,8 @@ export function renderCost(st: State) {
         h("dt", {}, "System 2"), h("dd", {}, usd(c.s2)),
         h("dt", {}, "Chat"), h("dd", {}, usd(c.chat ?? 0))),
       archived ? h("p", { class: "note" }, "What this recording cost when it ran, plus any chats about it. Opening it costs nothing.") : null,
-      h("p", { class: "note" }, "The app sets no spending limit: the OpenRouter key's own credit limit is the only one."),
-      st.budgetExhausted ? h("p", { class: "error-text" }, `OpenRouter stopped: ${st.budgetExhausted}`) : null));
+      h("p", { class: "note" }, "The app sets no spending limit of its own. TypeSafe bills Jev by the token; the OpenAI key's own limit caps Chat, label drafting, and fact-check research."),
+      st.budgetExhausted ? h("p", { class: "error-text" }, st.budgetExhausted) : null));
 }
 
 /**

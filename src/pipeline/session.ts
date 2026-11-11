@@ -69,7 +69,7 @@ export interface SessionOptions {
   /** Real services are built from fetch and the keys unless given. */
   services?: (ctx: { budget: Budget; log: (file: JsonlFile, row: unknown, live?: Record<string, unknown>) => void }) => Services;
   fetch?: typeof fetch;
-  keys?: { openrouter?: string; openai?: string };
+  keys?: { openai?: string; typesafe?: string };
   embedder?: Embedder;
   exportBoundary?: string;
   statsIntervalMs?: number;
@@ -273,16 +273,16 @@ export class Session {
   private realServices(log: (file: JsonlFile, row: unknown, live?: Record<string, unknown>) => void): Services {
     const f = this.opts.fetch ?? fetch;
     const cfg = this.opts.config.app;
-    const openrouter = this.opts.keys?.openrouter ?? process.env.OPENROUTER_API_KEY ?? "";
+    const typesafe = this.opts.keys?.typesafe ?? process.env.TYPESAFE_API_KEY ?? "";
     const openai = this.opts.keys?.openai ?? process.env.OPENAI_API_KEY ?? "";
     const transcriber = new Transcriber(cfg.transcription, { fetch: f, apiKey: openai, budget: this.budget, log: (r) => log("transcriptions", r) });
     const jev = new JevClient(cfg.jev, {
-      fetch: f, apiKey: openrouter, budget: this.budget,
+      fetch: f, apiKey: typesafe, budget: this.budget,
       log: (r, questions) => log("jev_calls", r, questions ? { questions } : undefined),
       onStart: (purpose) => this.emit("call.started", { system: "s1", purpose }),
     });
     const s2 = new S2Client(cfg.s2, {
-      fetch: f, apiKey: openrouter, budget: this.budget, log: (r) => log("s2_calls", r),
+      fetch: f, apiKey: openai, budget: this.budget, log: (r) => log("s2_calls", r),
       onStart: (purpose) => this.emit("call.started", { system: "s2", purpose }),
     });
     const apple = this.apple;

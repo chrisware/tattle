@@ -236,7 +236,7 @@ describe("bindControls", () => {
     expect(toasts()).toEqual(["toast ok|Stopping: in-flight work will finish", "toast error|409 nothing to stop", "toast error|plain"]);
   });
 
-  test("Replay without the OpenRouter key replays the folder transcript-only, at the chosen speed and voices", async () => {
+  test("Replay without the TypeSafe key replays the folder transcript-only, at the chosen speed and voices", async () => {
     P.bindControls(vi.fn(), vi.fn());
     $<HTMLInputElement>("#replay-dir").value = "  fixtures/x  ";
     $<HTMLSelectElement>("#voices").value = "2";
@@ -389,7 +389,7 @@ describe("the Start live window", () => {
     await flush();
   }
 
-  test("with the OpenRouter key: everything on, the remembered set picked, the cost at most, the dialog open and Start focused", async () => {
+  test("with the TypeSafe key: everything on, the remembered set picked, the cost at most, the dialog open and Start focused", async () => {
     $<HTMLSelectElement>("#voices").value = "3";
     await openWith({ key: true });
     expect([factcheck(), pick().value, $<HTMLSelectElement>("#voices").value]).toEqual(["true", "ai-podcast", "0"]);
@@ -500,7 +500,7 @@ describe("the Start live window", () => {
     $("#feat-factcheck").click();
     expect(factcheck()).toBe("true");
     expect($("#start-key").hidden).toBe(false);
-    expect($("#start-key .key-prompt-h").textContent).toBe("Please provide your OpenRouter API key to configure fact-checking or labeling.");
+    expect($("#start-key .key-prompt-h").textContent).toBe("Please provide your TypeSafe API key to configure fact-checking or labeling.");
     const notNow = [...document.querySelectorAll<HTMLButtonElement>("#start-key button")].find((b) => b.textContent === "Not now")!;
     notNow.click();
     expect([factcheck(), pick().value, $("#start-key").hidden, $("#start-key").children.length]).toEqual(["false", "off", true, 0]);
@@ -559,8 +559,8 @@ describe("the Start live window", () => {
     $("#start-go").click();
     expect($("#start-key").hidden).toBe(false);
     expect(fake.startLive).not.toHaveBeenCalled();
-    fake.saveKeys!.mockResolvedValue({ ...setupWith(true), saved: true, checks: { openrouter: { ok: true, message: "Works" } } });
-    $<HTMLInputElement>("#start-key input").value = "sk-or-v1-0123456789abcdef0123";
+    fake.saveKeys!.mockResolvedValue({ ...setupWith(true), saved: true, checks: { typesafe: { ok: true, message: "Works" } } });
+    $<HTMLInputElement>("#start-key input").value = "ts-0123456789abcdef0123";
     [...document.querySelectorAll<HTMLButtonElement>("#start-key button")].find((b) => b.textContent === "Save")!.click();
     await flush();
     await flush();
@@ -570,7 +570,7 @@ describe("the Start live window", () => {
 
   test("the engine saying the key is missing asks for it in the window", async () => {
     await openWith({ key: true });
-    fake.startLive!.mockRejectedValue(new A.ApiError(400, "OpenRouter key missing", { needsKey: "openrouter" }));
+    fake.startLive!.mockRejectedValue(new A.ApiError(400, "TypeSafe key missing", { needsKey: "typesafe" }));
     fake.setup!.mockResolvedValue(setupWith(false));
     $("#start-go").click();
     await flush();
@@ -1004,11 +1004,11 @@ describe("renderCost", () => {
     expect([...document.querySelectorAll("#cost dd")].at(-1)!.textContent).toBe("$0.50");
   });
 
-  test("OpenRouter refusing: the chip turns exhausted and says why; it clears again", () => {
+  test("a provider refusal: the chip turns exhausted and says why; it clears again", () => {
     const st = live();
     st.budgetExhausted = "key limit reached";
     P.renderCost(st);
-    expect([$("#cost").classList.contains("exhausted"), text("#cost .error-text")]).toEqual([true, "OpenRouter stopped: key limit reached"]);
+    expect([$("#cost").classList.contains("exhausted"), text("#cost .error-text")]).toEqual([true, "key limit reached"]);
     st.budgetExhausted = null;
     P.renderCost(st);
     expect($("#cost").classList.contains("exhausted")).toBe(false);

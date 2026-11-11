@@ -6,8 +6,9 @@
 import { $, clock, h, pretty, replace } from "./dom.js";
 import { featuresOf, type CallRow, type Claim, type LabelSet, type State, type SystemId } from "./state.js";
 
-const JEV_URL = "https://openrouter.ai/api/alpha/decisions";
-const S2_URL = "https://openrouter.ai/api/v1/chat/completions";
+const JEV_URL = "https://api.typesafe.ai/v1/systemone";
+const S2_CHAT_URL = "https://api.openai.com/v1/chat/completions";
+const S2_WEB_URL = "https://api.openai.com/v1/responses";
 
 /** Dollars at the precision a single call needs: $0.000036, $0.0077, $1.24. */
 export function money(n: number): string {
@@ -173,7 +174,7 @@ function jevRow(st: State, r: CallRow): HTMLElement {
       h("div", { class: "qa-row all" }, Object.entries(r.answers ?? {}).filter(([id]) => !id.startsWith("known_")).map(([id, a]) => answer(id, a, set))),
       memory(r),
       h("h4", {}, "The HTTP request and response"),
-      http("POST", JEV_URL, { model: r.model_returned ?? "typesafe/jev-1.13", state: r.state, questions },
+      http("POST", JEV_URL, { model: r.model_returned ?? "jev-1.13.0", state: r.state, questions },
         r.ok ? `200 OK · ${seconds(r.latency_ms)} · ${money(r.cost_usd)}` : `Failed · ${r.error ?? ""}`,
         r.ok ? { answers: r.answers, usage: r.usage } : { error: r.error },
         r.questions ? undefined : "The question wording is shown in full only for calls made while this page was open.")) : null);
@@ -200,8 +201,10 @@ function s2Row(st: State, r: CallRow): HTMLElement {
       h("p", { class: "note" }, `${p.about}${u ? ` It read ${u.prompt_tokens.toLocaleString()} tokens and wrote ${u.completion_tokens.toLocaleString()}${u.reasoning_tokens ? `, ${u.reasoning_tokens.toLocaleString()} of them reasoning` : ""}.` : ""}`),
       h("h4", {}, "The HTTP request and response"),
       r.request
-        ? http("POST", S2_URL,
-          { model: r.model_returned ?? "", messages: [{ role: "system", content: `(${r.request.system.length.toLocaleString()} characters, below)` }, { role: "user", content: r.request.user }], ...(r.web_engine ? { plugins: [{ id: "web", engine: r.web_engine }] } : {}) },
+        ? http("POST", r.web_engine ? S2_WEB_URL : S2_CHAT_URL,
+          r.web_engine
+            ? { model: r.model_returned ?? "", input: [{ role: "system", content: `(${r.request.system.length.toLocaleString()} characters, below)` }, { role: "user", content: r.request.user }], tools: [{ type: "web_search" }] }
+            : { model: r.model_returned ?? "", messages: [{ role: "system", content: `(${r.request.system.length.toLocaleString()} characters, below)` }, { role: "user", content: r.request.user }] },
           r.ok ? `200 OK · ${seconds(r.latency_ms)} · ${money(r.cost_usd)}` : `Failed · ${r.error ?? ""}`, reply ?? r.error ?? "")
         : h("p", { class: "note" }, "This call was recorded before prompts were saved with each call."),
       r.request ? h("details", {}, h("summary", {}, "System prompt"), h("pre", { class: "json" }, r.request.system)) : null) : null);

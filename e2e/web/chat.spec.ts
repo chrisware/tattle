@@ -32,11 +32,10 @@ test("asks about a recording, streams the answer, stops a second one, and switch
   // the model picker: search, pick, and the chat keeps the new model
   await page.locator("#model-btn").click();
   await expect(page.locator("#model-menu")).toBeVisible();
-  await page.locator("#model-search").fill("claude");
-  // the curated Claude models; those missing from OpenRouter's catalogue cannot be picked
-  await expect(page.locator("#model-list .model-row:not([disabled])")).toHaveText([/Claude Sonnet 5/]);
-  await expect(page.locator("#model-list .model-row[disabled]")).toHaveCount(2);
+  await page.locator("#model-search").fill("sol");
+  // the picker offers configured OpenAI models only; catalogue vendors are not listed
+  await expect(page.locator("#model-list .model-row:not([disabled])")).toHaveText([/gpt-6-sol/]);
   await page.locator("#model-list .model-row:not([disabled])").click();
-  await expect(page.locator("#model-btn")).toContainText("Claude Sonnet 5");
+  await expect(page.locator("#model-btn")).toContainText("gpt-6-sol");
   await expect(page.locator("#model-menu")).toBeHidden();
 });

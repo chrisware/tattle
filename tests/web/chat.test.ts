@@ -38,9 +38,9 @@ const listOf = (chats: Partial<ChatList["chats"][number]>[] = [], o: Partial<Cha
   chats: chats.map((c, i) => ({ id: `chat_${i + 1}`, title: `Chat ${i + 1}`, model: LUNA, updatedAt: "", busy: false, messages: 2, costUsd: 0.0012, ...c })),
   ...o,
 });
-const setup = (openrouter: boolean): SetupStatus => ({
+const setup = (openai: boolean): SetupStatus => ({
   configured: true, required: [], path: "~/x",
-  keys: [{ name: "openai", env: "OPENAI_API_KEY", set: false, source: null, hint: null }, { name: "openrouter", env: "OPENROUTER_API_KEY", set: openrouter, source: openrouter ? "file" : null, hint: openrouter ? "abcd" : null }],
+  keys: [{ name: "openai", env: "OPENAI_API_KEY", set: openai, source: openai ? "file" : null, hint: openai ? "abcd" : null }, { name: "typesafe", env: "TYPESAFE_API_KEY", set: false, source: null, hint: null }],
 });
 const session = (o: Partial<NonNullable<State["session"]>> = {}): State => {
   const s = emptyState();
@@ -59,7 +59,7 @@ function streams() {
   return calls;
 }
 
-/** A fresh page with chat bound; `st` rendered unless null; `key` whether OpenRouter's key is set. */
+/** A fresh page with chat bound; `st` rendered unless null; `key` whether the OpenAI key is set. */
 async function boot(o: { st?: State | null; key?: boolean; list?: ChatList; url?: string } = {}) {
   await resetApi(fake, {
     setup: async () => setup(o.key ?? true),
@@ -244,18 +244,18 @@ describe("opening", () => {
     expect(() => chat.openChat()).not.toThrow();
   });
 
-  test("without the OpenRouter key it shows the key's card instead; saving the key opens the chat", async () => {
+  test("without the OpenAI key it shows the key's card instead; saving the key opens the chat", async () => {
     await boot({ key: false });
     await open();
     const box = document.getElementById("chat-key")!;
     expect([box.hidden, document.getElementById("chat")!.hidden]).toEqual([false, true]);
-    expect(text("#chat-key .key-prompt-h")).toBe("Please provide your OpenRouter API key to use Chat.");
+    expect(text("#chat-key .key-prompt-h")).toBe("Please provide your OpenAI API key to use Chat.");
     expect(fake.chatModels).not.toHaveBeenCalled();
     chat.chatOpened(); // asked again: the card is not drawn twice
     await flush();
     expect(all("#chat-key .key-prompt")).toHaveLength(1);
-    fake.saveKeys!.mockResolvedValue({ ...setup(true), saved: true, checks: { openrouter: { ok: true, message: "Key works" } } });
-    type(document.querySelector<HTMLInputElement>("#chat-key input")!, "sk-or-v1-abcdefghijklmnopqrstuvwx");
+    fake.saveKeys!.mockResolvedValue({ ...setup(true), saved: true, checks: { openai: { ok: true, message: "Key works" } } });
+    type(document.querySelector<HTMLInputElement>("#chat-key input")!, "sk-proj-abcdefghijklmnopqrstuvwx");
     button("Save", box)!.click();
     await flush();
     expect([box.hidden, box.childElementCount, document.getElementById("chat")!.hidden]).toEqual([true, 0, false]);
@@ -327,14 +327,14 @@ describe("asking", () => {
 
   test("a chat that cannot be created is a toast, and nothing streams", async () => {
     await boot();
-    fake.createChat!.mockRejectedValue(new Error("OpenRouter key missing"));
+    fake.createChat!.mockRejectedValue(new Error("OpenAI key missing"));
     type(input(), "q");
     key(input(), "Enter");
     await flush();
     fake.createChat!.mockRejectedValue("odd");
     key(input(), "Enter");
     await flush();
-    expect([toasts(), fake.sendChat.mock.calls.length]).toEqual([["OpenRouter key missing", "odd"], 0]);
+    expect([toasts(), fake.sendChat.mock.calls.length]).toEqual([["OpenAI key missing", "odd"], 0]);
   });
 
   test("the reply streams: the question, typing dots, Thinking…, the words as Markdown, then the saved reply", async () => {
@@ -838,7 +838,7 @@ describe("the model picker", () => {
     await boot();
     await open();
     await openMenu();
-    expect([rows()[3]!.disabled, rows()[3]!.getAttribute("title"), rows()[0]!.getAttribute("title")]).toEqual([true, "OpenRouter no longer lists this model", LUNA]);
+    expect([rows()[3]!.disabled, rows()[3]!.getAttribute("title"), rows()[0]!.getAttribute("title")]).toEqual([true, "This model is not available", LUNA]);
   });
 
   test("search filters by name or id, any case; nothing found says so", async () => {

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Budget } from "../src/budget.ts";
 import {
-  ChatError, ChatService, chatSpend, clock, composeQuestion, foldChats, formatLine, GENERATION_URL, MODELS_URL,
+  ChatError, ChatService, chatSpend, clock, composeQuestion, foldChats, formatLine,
   type ChatCallRow, type ChatEvent, type ChatSource, type TranscriptLine,
 } from "../src/chat/chat.ts";
 import { CHAT_URL } from "../src/factcheck/s2.ts";
@@ -26,7 +26,7 @@ afterEach(() => {
 });
 
 /** A chat service on a tmp folder with a fake OpenRouter; `ask` runs a question and returns its events. */
-function rig(lines: TranscriptLine[] = [line(1), line(2)], o: { budget?: Budget; live?: boolean; sleep?: boolean } = {}) {
+function rig(lines: TranscriptLine[] = [line(1), line(2)], o: { budget?: Budget; live?: boolean; sleep?: boolean; extraModels?: string[]; modelChoice?: string } = {}) {
   const dir = tmpDir("chat-");
   const or = new FakeOpenRouter();
   const sleeps: number[] = [];
@@ -36,6 +36,8 @@ function rig(lines: TranscriptLine[] = [line(1), line(2)], o: { budget?: Budget;
   const svc = new ChatService(cfg, {
     fetch: or.fetch, apiKey: "sk-or-test", source: () => current, onSpend: () => { spends++; }, rand: () => 0,
     ...(o.sleep === false ? {} : { sleep: async (ms: number) => { sleeps.push(ms); } }),
+    ...(o.extraModels ? { extraModels: () => o.extraModels! } : {}),
+    ...(o.modelChoice !== undefined ? { modelChoice: () => o.modelChoice } : {}),
   });
   const run = async (id: string, body: { content?: unknown; mode?: unknown }, onEvent?: (e: ChatEvent) => void) => {
     const events: ChatEvent[] = [];
@@ -125,65 +127,43 @@ describe("foldChats and chatSpend", () => {
 });
 
 describe("the model catalogue", () => {
-  it("is kept for an hour: a second call makes no fetch; after 1 h it is read again", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(T0);
-    const { svc, or } = rig();
-    const timeout = vi.spyOn(AbortSignal, "timeout");
-    await svc.models();
-    await svc.models();
-    expect(or.urls.filter((u) => u === MODELS_URL)).toHaveLength(1);
-    expect(timeout.mock.calls.map((c) => c[0])).toEqual([10_000]);
-    vi.setSystemTime(T0 + 3_599_999);
-    await svc.models();
-    expect(or.urls.filter((u) => u === MODELS_URL)).toHaveLength(1);
-    vi.setSystemTime(T0 + 3_600_000);
-    await svc.models();
-    expect(or.urls.filter((u) => u === MODELS_URL)).toHaveLength(2);
-  });
+  const offered = ["openai/gpt-6-luna", "openai/gpt-6-sol", "openai/gpt-6-astra"];
+  const blank = (id: string) => ({ id, name: id, contextLength: null, maxOutput: null, inputUsdPerM: null, outputUsdPerM: null, cacheReadUsdPerM: null, available: null });
 
-  it("a failure (HTTP 500 or a throw): availability null with no catalogue, retried after 60 s; the previous catalogue is kept", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(T0);
-    let mode: "500" | "throw" | "ok" = "500";
-    const or = new FakeOpenRouter();
-    const f = (async (url: string, init: RequestInit) => {
-      if (mode === "500") return text("down", 500);
-      if (mode === "throw") throw new TypeError("fetch failed");
-      return or.fetch(url, init);
-    }) as typeof fetch;
-    const svc = new ChatService(cfg, { fetch: f, apiKey: "k", source: () => null });
+  it("models() does not fetch: repeated calls return the configured OpenAI ids", async () => {
+    const { svc, or } = rig();
     const first = await svc.models();
-    expect(first.models.every((m) => m.available === null && m.name === m.id && m.inputUsdPerM === null)).toBe(true);
-    mode = "ok";
-    vi.setSystemTime(T0 + 59_999);
-    expect((await svc.models()).models[0]!.available).toBeNull(); // still the failed read
-    vi.setSystemTime(T0 + 60_000);
-    expect((await svc.models()).models[0]!.available).toBe(true);
-    mode = "throw";
-    vi.setSystemTime(T0 + 60_000 + 3_600_000);
-    const kept = await svc.models();
-    expect(kept.models[0]).toMatchObject({ available: true, contextLength: 1_050_000 }); // the previous catalogue
-    expect(kept.models[1]!.available).toBe(false);
+    const again = await svc.models();
+    expect(or.urls).toEqual([]);
+    expect(again).toEqual(first);
+    expect(first.default).toBe("openai/gpt-6-luna");
+    expect(first.models).toEqual(offered.map(blank));
   });
 
-  it("prices: missing, negative or 'abc' → null; context falls back to top_provider; the name falls back to the id; cached input price", async () => {
-    const { svc, or } = rig();
-    or.models = [
-      { id: "openai/gpt-6-luna", pricing: { prompt: "abc", completion: "-1" }, top_provider: { context_length: 400_000 } } as any,
-      { id: "openai/gpt-6-sol", name: "Sol", context_length: 200_000, pricing: { prompt: "0.0000012345678", completion: "0.00001", input_cache_read: "0.0000001" } } as any,
-      { id: "openai/gpt-6-astra", name: "Astra" } as any,
-    ];
+  it("a throwing fetch is never called: availability stays null and the configured OpenAI ids are still returned", async () => {
+    const f = vi.fn(async () => { throw new TypeError("fetch failed"); });
+    const svc = new ChatService(cfg, { fetch: f as unknown as typeof fetch, apiKey: "k", source: () => null });
+    const first = await svc.models();
+    expect(f).not.toHaveBeenCalled();
+    expect(first.models.every((m) => m.available === null && m.name === m.id && m.inputUsdPerM === null && m.contextLength === null)).toBe(true);
+    expect(first.models.map((m) => m.id)).toEqual(offered);
+    expect((await svc.models()).models).toEqual(first.models);
+  });
+
+  it("prices and context are always unknown; non-OpenAI configured ids are omitted; extraModels are offered", async () => {
+    const { svc } = rig([], { extraModels: ["custom/gpt-extra", "bad id", "openai/gpt-6-luna"] });
     const m = (await svc.models()).models;
-    expect(m[0]).toEqual({ id: "openai/gpt-6-luna", name: "openai/gpt-6-luna", contextLength: 400_000, maxOutput: null, inputUsdPerM: null, outputUsdPerM: null, cacheReadUsdPerM: null, available: true });
-    expect(m[1]).toMatchObject({ name: "Sol", contextLength: 200_000, inputUsdPerM: 1.2346, outputUsdPerM: 10, cacheReadUsdPerM: 0.1 });
-    expect(m[2]).toMatchObject({ name: "Astra", contextLength: null, inputUsdPerM: null });
-    expect(m[3]!.available).toBe(false);
+    expect(m.map((x) => x.id)).toEqual([...offered, "custom/gpt-extra"]);
+    expect(m.every((x) => x.name === x.id && x.contextLength === null && x.maxOutput === null && x.inputUsdPerM === null && x.outputUsdPerM === null && x.cacheReadUsdPerM === null && x.available === null)).toBe(true);
   });
 
-  it("a catalogue answer without data lists nothing, so availability is unknown", async () => {
-    const svc = new ChatService(cfg, { fetch: (async () => json({})) as unknown as typeof fetch, apiKey: "k", source: () => null });
-    expect((await svc.models()).models[0]!.available).toBeNull();
+  it("a catalogue response is ignored: models() still lists the configured OpenAI ids, and the saved choice is the default when offered", async () => {
+    const svc = new ChatService(cfg, { fetch: (async () => json({})) as unknown as typeof fetch, apiKey: "k", source: () => null, modelChoice: () => "openai/gpt-6-sol" });
+    const m = await svc.models();
+    expect(m.default).toBe("openai/gpt-6-sol");
+    expect(m.models).toEqual(offered.map(blank));
+    const missed = new ChatService(cfg, { fetch: (async () => json({ data: [] })) as unknown as typeof fetch, apiKey: "k", source: () => null, modelChoice: () => "anthropic/claude-sonnet-5" });
+    expect((await missed.models()).default).toBe(cfg.defaultModel);
   });
 });
 
@@ -202,7 +182,8 @@ describe("chats: create, update, remove", () => {
 
   it("create with an allowed model; an unknown one → 400; ids count deleted chats (chat_2 after deleting chat_1)", async () => {
     const { svc } = rig();
-    expect(await svc.create("anthropic/claude-sonnet-5")).toMatchObject({ id: "chat_1", model: "anthropic/claude-sonnet-5" });
+    expect(await svc.create("openai/gpt-6-sol")).toMatchObject({ id: "chat_1", model: "openai/gpt-6-sol" });
+    await expect(svc.create("anthropic/claude-sonnet-5")).rejects.toMatchObject({ status: 400, message: "unknown model anthropic/claude-sonnet-5" });
     await expect(svc.create("someone/else")).rejects.toMatchObject({ status: 400, message: "unknown model someone/else" });
     expect(svc.remove("chat_1")).toEqual({ deleted: "chat_1" });
     expect((await svc.create()).id).toBe("chat_2");
@@ -304,7 +285,7 @@ describe("asking: validation and what is sent", () => {
     expect((await r.svc.chat("chat_1")).title).toBe("a".repeat(30) + " " + "b".repeat(29));
   });
 
-  it("the request: model, the whole history, stream with usage, provider, effort, headers, and a stop signal joined to the timeout", async () => {
+  it("the request: bare model id, the whole history, stream with usage, reasoning_effort, Authorization and Content-Type only, and a stop signal joined to the timeout", async () => {
     const any = vi.spyOn(AbortSignal, "any");
     const timeout = vi.spyOn(AbortSignal, "timeout");
     const r = rig();
@@ -313,9 +294,12 @@ describe("asking: validation and what is sent", () => {
     r.or.completions.push((_b, i) => { init = i; return sse(replyChunks("ok")); });
     await r.run("chat_1", { content: "q" });
     const body = r.or.bodies[0];
-    expect(body).toMatchObject({ model: "openai/gpt-6-luna", stream: true, usage: { include: true }, provider: { data_collection: "deny" }, reasoning: { effort: "low" } });
+    expect(body).toMatchObject({ model: "gpt-6-luna", stream: true, stream_options: { include_usage: true }, reasoning_effort: "low" });
+    expect(body).not.toHaveProperty("provider");
+    expect(body).not.toHaveProperty("reasoning");
+    expect(body).not.toHaveProperty("usage");
     expect(body.messages.map((m: any) => m.role)).toEqual(["system", "user"]);
-    expect(init!.headers).toEqual({ Authorization: "Bearer sk-or-test", "Content-Type": "application/json", "X-OpenRouter-Title": "Tattle" });
+    expect(init!.headers).toEqual({ Authorization: "Bearer sk-or-test", "Content-Type": "application/json" });
     expect(timeout.mock.calls.map((c) => c[0])).toContain(cfg.timeoutMs);
     expect(any).toHaveBeenCalledOnce();
     expect(any.mock.calls[0]![0]).toHaveLength(2);
@@ -323,7 +307,7 @@ describe("asking: validation and what is sent", () => {
   });
 
   it("history leaves out failed replies with no content; an anthropic model marks the last message with cache_control", async () => {
-    const r = rig();
+    const r = rig([], { extraModels: ["anthropic/claude-sonnet-5"] });
     await r.svc.create("anthropic/claude-sonnet-5");
     r.or.completions.push(() => json({ error: { code: 401, message: "No auth" } }, 401));
     await r.run("chat_1", { content: "first" });
@@ -344,7 +328,7 @@ describe("asking: validation and what is sent", () => {
     r.reply();
     await r.run("chat_1", { content: "q2" });
     const b = r.or.bodies[1];
-    expect(b.model).toBe("openai/gpt-6-sol");
+    expect(b.model).toBe("gpt-6-sol");
     expect(b.messages.map((m: any) => [m.role, m.role === "assistant" ? m.content : undefined])).toEqual([["system", undefined], ["user", undefined], ["assistant", "Answer one"], ["user", undefined]]);
     expect(b.messages.slice(0, 3)).toEqual([...r.or.bodies[0].messages, { role: "assistant", content: "Answer one" }]);
   });
@@ -459,12 +443,12 @@ describe("the stream", () => {
     expect(r.done(ev).call).toMatchObject({ ok: true, attempts: 2 });
   });
 
-  it("401 → 'OpenRouter rejected the API key (401)…', not retried", async () => {
+  it("401 → 'OpenAI rejected the API key (401)…', not retried", async () => {
     const r = rig();
     await r.svc.create();
     r.or.completions.push(() => json({ error: { code: 401, message: "No auth" } }, 401));
     const ev = await r.run("chat_1", { content: "q" });
-    expect((ev.find((e) => e.type === "error") as any).message).toBe("OpenRouter rejected the API key (401): check OPENROUTER_API_KEY.");
+    expect((ev.find((e) => e.type === "error") as any).message).toBe("OpenAI rejected the API key (401): check OPENAI_API_KEY.");
     expect(r.or.bodies).toHaveLength(1);
   });
 
@@ -475,7 +459,7 @@ describe("the stream", () => {
     await r.svc.create();
     r.or.completions.push(() => json({ error: { code: 402, message: "Insufficient credits" } }, 402), () => json({ error: { code: 402 } }, 402));
     const ev = await r.run("chat_1", { content: "q" });
-    expect((ev.find((e) => e.type === "error") as any).message).toBe("OpenRouter credits or the key's limit are exhausted (402).");
+    expect((ev.find((e) => e.type === "error") as any).message).toBe("OpenAI credits or the key's limit are exhausted (402).");
     expect(exhausted).toEqual(["provider:chat"]);
     expect(budget.isExhausted).toBe(true);
     const again = await r.run("chat_1", { content: "q2" }); // already exhausted: exhaust throws inside, swallowed
@@ -486,13 +470,13 @@ describe("the stream", () => {
     expect((await noBudget.run("chat_1", { content: "q" })).at(-1)!.type).toBe("done");
   });
 
-  it("404 'No endpoints found matching your data policy' → the privacy message; a plain 404 → '<model>: <msg>'", async () => {
+  it("a 404 with a message is '<model>: <msg>', including one that used to mean an OpenRouter data policy", async () => {
     const r = rig();
     await r.svc.create();
     r.or.completions.push(() => json({ error: { code: 404, message: "No endpoints found matching your data policy (Free model publication)" } }, 404));
     r.or.completions.push(() => json({ error: { code: 404, message: "Model not found" } }, 404));
     const a = await r.run("chat_1", { content: "q" });
-    expect((a.find((e) => e.type === "error") as any).message).toBe("No provider of openai/gpt-6-luna accepts this project's privacy setting (data_collection: deny). Pick another model.");
+    expect((a.find((e) => e.type === "error") as any).message).toBe("openai/gpt-6-luna: No endpoints found matching your data policy (Free model publication)");
     const b = await r.run("chat_1", { content: "q" });
     expect((b.find((e) => e.type === "error") as any).message).toBe("openai/gpt-6-luna: Model not found");
   });
@@ -545,66 +529,73 @@ describe("the stream", () => {
 describe("stop, and the cost of a stopped reply", () => {
   const holdOpen = (r: ReturnType<typeof rig>, chunks: string[]) => r.or.completions.push((_b, init) => sse(chunks, { holdOpen: true, signal: init.signal }));
 
-  it("stop mid-stream: {stopped:true}; the reply keeps its partial content, stopped on the message and the call; not retried; cost from the generation record", async () => {
+  it("stop mid-stream: {stopped:true}; the reply keeps its partial content; not retried; no generation lookup; cost 0 and estimated because prices are unknown", async () => {
     const budget = new Budget();
     const r = rig([line(1)], { budget });
     await r.svc.create();
     holdOpen(r, [delta("Partial")]);
-    r.or.generations.push((id) => { expect(id).toBe("gen-1"); return json({ data: { total_cost: 0.0004, native_tokens_prompt: 300, native_tokens_completion: 5, tokens_prompt: 1 } }); });
     let stopped: unknown;
     const ev = await r.run("chat_1", { content: "q" }, (e) => { if (e.type === "delta") stopped = r.svc.stop("chat_1"); });
+    const promptTok = Math.ceil(JSON.stringify(r.or.bodies[0]).length / 4);
     expect(stopped).toEqual({ stopped: true });
     expect(r.or.bodies).toHaveLength(1);
-    expect(r.sleeps).toEqual([1000]);
-    expect(r.or.urls).toContain(`${GENERATION_URL}?id=gen-1`);
+    expect(r.sleeps).toEqual([]);
+    expect(r.or.urls.some((u) => u.includes("/generation"))).toBe(false);
     expect(r.done(ev).message).toMatchObject({ content: "Partial", stopped: true });
-    expect(r.done(ev).call).toMatchObject({ ok: true, stopped: true, cost_usd: 0.0004, usage: { prompt_tokens: 300, completion_tokens: 5, reasoning_tokens: 0, cached_tokens: 0 } });
-    expect(r.done(ev).call).not.toHaveProperty("estimated");
+    expect(r.done(ev).call).toMatchObject({ ok: true, stopped: true, estimated: true, cost_usd: 0, usage: { prompt_tokens: promptTok, completion_tokens: Math.ceil("Partial".length / 4), reasoning_tokens: 0, cached_tokens: 0 } });
     expect(ev.some((e) => e.type === "error")).toBe(false);
-    expect(budget.totals().chat).toBe(0.0004);
-    expect(r.spends()).toBe(1);
-  });
-
-  it("the generation record's token counts fall back to tokens_prompt/tokens_completion, then 0", async () => {
-    const r = rig();
-    await r.svc.create();
-    holdOpen(r, [delta("x")]);
-    r.or.generations.push(() => json({ data: { total_cost: 0.0001, tokens_prompt: 40 } }));
-    const ev = await r.run("chat_1", { content: "q" }, (e) => { if (e.type === "delta") r.svc.stop("chat_1"); });
-    expect(r.done(ev).call.usage).toEqual({ prompt_tokens: 40, completion_tokens: 0, reasoning_tokens: 0, cached_tokens: 0 });
-  });
-
-  it("a generation lookup failing 3 times → sleeps [1000, 2000, 3000] and a cost estimated from the price list, marked estimated", async () => {
-    const r = rig();
-    await r.svc.create();
-    holdOpen(r, [delta("Hello")]);
-    r.or.generations.push(() => text("not yet", 404), () => { throw new TypeError("fetch failed"); }, () => json({ data: { total_cost: "0.1" } }));
-    const ev = await r.run("chat_1", { content: "q" }, (e) => { if (e.type === "delta") r.svc.stop("chat_1"); });
-    expect(r.sleeps).toEqual([1000, 2000, 3000]);
-    const promptTok = Math.ceil(JSON.stringify(r.or.bodies[0]).length / 4);
-    const cost = (promptTok * 0.1 + Math.ceil("Hello".length / 4) * 0.5) / 1e6;
-    expect(r.done(ev).call).toMatchObject({ estimated: true, stopped: true, cost_usd: cost, usage: { prompt_tokens: promptTok, completion_tokens: 2 } });
-    expect((r.done(ev).chat as any).meter.estimated).toBe(true);
-  });
-
-  it("an estimate with no price list costs 0", async () => {
-    const r = rig();
-    r.or.models = [];
-    await r.svc.create();
-    holdOpen(r, [delta("Hello")]);
-    r.or.generations.push(() => text("", 500), () => text("", 500), () => text("", 500));
-    const ev = await r.run("chat_1", { content: "q" }, (e) => { if (e.type === "delta") r.svc.stop("chat_1"); });
-    expect(r.done(ev).call).toMatchObject({ estimated: true, cost_usd: 0 });
+    expect(budget.totals().chat).toBe(0);
     expect(r.spends()).toBe(0);
   });
 
-  it("stopped before any chunk (no generation id): cost 0, usage null, no generation lookup, nothing recorded", async () => {
+  it("without a usage chunk, token counts are estimated from the request and the partial reply, not looked up", async () => {
+    const r = rig();
+    await r.svc.create();
+    holdOpen(r, [delta("x")]);
+    const ev = await r.run("chat_1", { content: "q" }, (e) => { if (e.type === "delta") r.svc.stop("chat_1"); });
+    expect(r.or.urls.some((u) => u.includes("/generation"))).toBe(false);
+    expect(r.done(ev).call.usage).toEqual({
+      prompt_tokens: Math.ceil(JSON.stringify(r.or.bodies[0]).length / 4),
+      completion_tokens: Math.ceil("x".length / 4),
+      reasoning_tokens: 0,
+      cached_tokens: 0,
+    });
+    expect(r.done(ev).call).toMatchObject({ estimated: true, cost_usd: 0 });
+    expect(r.sleeps).toEqual([]);
+  });
+
+  it("missing usage.cost does not sleep or call /generation; cost is 0 and estimated", async () => {
+    const r = rig();
+    await r.svc.create();
+    holdOpen(r, [delta("Hello")]);
+    const ev = await r.run("chat_1", { content: "q" }, (e) => { if (e.type === "delta") r.svc.stop("chat_1"); });
+    expect(r.sleeps).toEqual([]);
+    expect(r.or.urls.some((u) => u.includes("/generation"))).toBe(false);
+    const promptTok = Math.ceil(JSON.stringify(r.or.bodies[0]).length / 4);
+    expect(r.done(ev).call).toMatchObject({ estimated: true, stopped: true, cost_usd: 0, usage: { prompt_tokens: promptTok, completion_tokens: Math.ceil("Hello".length / 4) } });
+    expect((r.done(ev).chat as any).meter.estimated).toBe(true);
+  });
+
+  it("an estimate with no known prices costs 0", async () => {
+    const r = rig();
+    await r.svc.create();
+    holdOpen(r, [delta("Hello")]);
+    const ev = await r.run("chat_1", { content: "q" }, (e) => { if (e.type === "delta") r.svc.stop("chat_1"); });
+    expect(r.done(ev).call).toMatchObject({ estimated: true, cost_usd: 0 });
+    expect(r.spends()).toBe(0);
+    expect(r.or.urls.some((u) => u.includes("/generation"))).toBe(false);
+  });
+
+  it("stopped before any chunk (no generation id): no generation lookup; cost 0 and estimated from the request", async () => {
     const budget = new Budget();
     const r = rig([line(1)], { budget });
     await r.svc.create();
     r.or.completions.push((_b, init) => { setTimeout(() => r.svc.stop("chat_1"), 0); return sse([], { holdOpen: true, signal: init.signal }); });
     const ev = await r.run("chat_1", { content: "q" });
-    expect(r.done(ev).call).toMatchObject({ stopped: true, cost_usd: 0, usage: null, id: null });
+    expect(r.done(ev).call).toMatchObject({
+      stopped: true, estimated: true, cost_usd: 0, id: null,
+      usage: { prompt_tokens: Math.ceil(JSON.stringify(r.or.bodies[0]).length / 4), completion_tokens: 0, reasoning_tokens: 0, cached_tokens: 0 },
+    });
     expect(r.or.urls.some((u) => u.includes("/generation"))).toBe(false);
     expect(budget.totals().chat).toBe(0);
     expect(r.spends()).toBe(0);
@@ -624,7 +615,7 @@ describe("stop, and the cost of a stopped reply", () => {
     await expect(r.svc.prepare("chat_1", { content: "q" })((e) => events.push(e))).rejects.toMatchObject({ status: 404, message: "unknown chat chat_1" });
     expect(events.map((e) => e.type)).toEqual(["start"]);
     expect(r.rows().map((x) => x.kind === "chat" ? x.op : x.kind)).toEqual(["create", "chat_message", "rename", "delete", "chat_message", "chat_call"]);
-    expect(r.rows().at(-1)).toMatchObject({ kind: "chat_call", stopped: true });
+    expect(r.rows().at(-1)).toMatchObject({ kind: "chat_call", stopped: true, estimated: true, cost_usd: 0 });
   });
 });
 
@@ -647,15 +638,17 @@ describe("odd inputs", () => {
     expect(r.done(ev).call).toMatchObject({ ok: false, attempts: 2, error: "socket gone" });
   });
 
-  it("a chunk without an id leaves the generation id to a later chunk; a generation record without token counts gives 0", async () => {
+  it("a chunk without an id leaves the generation id to a later chunk; missing usage.cost is estimated, not looked up", async () => {
     const r = rig();
     await r.svc.create();
     r.or.completions.push((_b, init) => sse([sseData({ choices: [{ delta: { content: "A" } }] }), sseData({ id: "gen-9", choices: [{ delta: { content: "B" } }] })], { holdOpen: true, signal: init.signal }));
-    r.or.generations.push(() => json({ data: { total_cost: 0.0002 } }));
     let n = 0;
     const ev = await r.run("chat_1", { content: "q" }, (e) => { if (e.type === "delta" && ++n === 2) r.svc.stop("chat_1"); });
-    expect(r.done(ev).call).toMatchObject({ id: "gen-9", cost_usd: 0.0002, usage: { prompt_tokens: 0, completion_tokens: 0 } });
-    expect(r.or.urls).toContain(`${GENERATION_URL}?id=gen-9`);
+    expect(r.or.urls.some((u) => u.includes("/generation"))).toBe(false);
+    expect(r.done(ev).call).toMatchObject({
+      id: "gen-9", estimated: true, cost_usd: 0,
+      usage: { prompt_tokens: Math.ceil(JSON.stringify(r.or.bodies[0]).length / 4), completion_tokens: Math.ceil("AB".length / 4) },
+    });
   });
 
   it("an old question row without 'sent' is re-sent as its content; unknown row kinds and ops are ignored", async () => {
@@ -693,7 +686,7 @@ describe("the meter", () => {
     const chat = r.done(ev).chat as any;
     expect(chat.messages.map((m: any) => m.content)).toEqual(["q1", "one", "q2 edited", ""]);
     expect(chat.meter).toMatchObject({
-      model: "openai/gpt-6-luna", contextLength: 1_050_000, contextTokens: 110, leftTokens: 1_050_000 - 110,
+      model: "openai/gpt-6-luna", contextLength: null, contextTokens: 110, leftTokens: null,
       inputTokens: 300, cachedTokens: 60, outputTokens: 30, reasoningTokens: 4, costUsd: 0.003, estimated: false, pendingLines: 0, pendingTokens: 0,
     });
     lines.push(line(3), { ...line(4), text: "a longer line of text here" });

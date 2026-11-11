@@ -174,18 +174,18 @@ describe("Session construction", () => {
     }
   });
 
-  it("real services: Jev and System 2 go through the given fetch with the OpenRouter key, and stream as calls", async () => {
+  it("real services: Jev and System 2 go through the given fetch with the TypeSafe and OpenAI keys, and stream as calls", async () => {
     const urls: string[] = [];
     const fetch = (async (u: string, init: RequestInit) => {
       urls.push(`${u} ${(init.headers as Record<string, string>).Authorization}`);
       return new Response(JSON.stringify({ answers: { q: { type: "noul", noul: 0.5 } }, id: "g", model: "jev", provider: "x", usage: { cost: 0, input_tokens: 1, output_tokens: 1 } }), { status: 200 });
     }) as unknown as typeof globalThis.fetch;
-    const { s, bus } = makeSession({ services: undefined, fetch, keys: { openrouter: "sk-or" } });
+    const { s, bus } = makeSession({ services: undefined, fetch, keys: { typesafe: "ts-session", openai: "sk-proj-s2" } });
     const live: string[] = [];
     bus.subscribe((e) => live.push(e.type));
     const r = await (s as any).services.ask({ a: 1 }, { q: { type: "noul", instruction: "Is it?", criteria: { true: "yes", false: "no" } } }, { purpose: "utterance", utterance_id: "u_1" });
     expect(r.answers.q).toMatchObject({ noul: 0.5 });
-    expect(urls[0]).toMatch(/alpha\/decisions Bearer sk-or$/);
+    expect(urls[0]).toMatch(/alpha\/decisions Bearer ts-session$/);
     expect(live).toContain("call.started");
     expect(live).toContain("call");
     expect(bus.history().some((e) => e.type === "call" || e.type === "call.started")).toBe(false);
@@ -803,8 +803,8 @@ describe("Session health, stats and export", () => {
     const { s, of } = makeSession({ sources: [new SamplesSource("host", silence(0))] });
     s.budget.record("jev", 0.01);
     expect(of("cost").length).toBeGreaterThan(0);
-    (s.budget as any).opts.onExhausted({ cap: "openrouter", purpose: "jev", message: "no credits", totals: s.budget.totals() });
-    expect(of("budget.exhausted")[0]).toMatchObject({ cap: "openrouter", purpose: "jev", message: "no credits" });
+    (s.budget as any).opts.onExhausted({ cap: "provider", purpose: "jev", message: "no credits", totals: s.budget.totals() });
+    expect(of("budget.exhausted")[0]).toMatchObject({ cap: "provider", purpose: "jev", message: "no credits" });
   });
 });
 
@@ -846,11 +846,11 @@ describe("Session commands", () => {
 
   it("every event of a short session with real services on fakes passes its schema", async () => {
     // fixture slices with both features on: transcription, Jev (boundary, System 1, labels) and System 2 on one fake fetch
-    const { fakeServicesFetch, TEST_OPENROUTER_KEY, TEST_OPENAI_KEY } = await import("./fakes/index.ts");
+    const { fakeServicesFetch, TEST_OPENAI_KEY } = await import("./fakes/index.ts");
     const { loadScript } = await import("./helpers.ts");
     const { f } = fakeServicesFetch(loadScript());
     const { s, invalid, events } = makeSession({
-      services: undefined, fetch: f, keys: { openrouter: TEST_OPENROUTER_KEY, openai: TEST_OPENAI_KEY }, features: {},
+      services: undefined, fetch: f, keys: { typesafe: "ts-fixture-key-000000000000", openai: TEST_OPENAI_KEY }, features: {},
       sources: [new SamplesSource("host", fixtureSlice("host", 0, 16_000)), new SamplesSource("remote", fixtureSlice("remote", 0, 16_000))],
     });
     await s.run();

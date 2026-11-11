@@ -100,7 +100,7 @@ describe("TranscriptionSettings", () => {
 });
 
 describe("the transcription routes, and what Start and Chat refuse", () => {
-  const prev = { oa: process.env.OPENAI_API_KEY, or: process.env.OPENROUTER_API_KEY };
+  const prev = { oa: process.env.OPENAI_API_KEY, ts: process.env.TYPESAFE_API_KEY };
   let installed = false;
   const transcription = new TranscriptionSettings({
     store: store(), openaiKeySet: () => !!process.env.OPENAI_API_KEY,
@@ -112,13 +112,13 @@ describe("the transcription routes, and what Start and Chat refuse", () => {
   let port = 0;
   beforeAll(async () => {
     delete process.env.OPENAI_API_KEY;
-    delete process.env.OPENROUTER_API_KEY;
+    delete process.env.TYPESAFE_API_KEY;
     await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
     port = (server.address() as AddressInfo).port;
   });
   afterAll(async () => {
     if (prev.oa !== undefined) process.env.OPENAI_API_KEY = prev.oa;
-    if (prev.or !== undefined) process.env.OPENROUTER_API_KEY = prev.or;
+    if (prev.ts !== undefined) process.env.TYPESAFE_API_KEY = prev.ts;
     await new Promise<void>((r) => server.close(() => r()));
   });
 
@@ -140,19 +140,19 @@ describe("the transcription routes, and what Start and Chat refuse", () => {
     expect(r.json).toMatchObject({ engine: "apple", saved: "apple", apple: { available: true }, openai: { keySet: false } });
   });
 
-  test("Start refuses features without the OpenRouter key, and Apple before its model is ready", async () => {
+  test("Start refuses features without the TypeSafe key, and Apple before its model is ready", async () => {
     const fc = await call("POST", "/api/session/start", { mode: "replay", dir: "fixtures/conversation", features: { factcheck: true, labels: false } });
-    expect(fc).toMatchObject({ status: 400, json: { needsKey: "openrouter" } });
-    expect(fc.json.error).toMatch(/OpenRouter API key to configure fact-checking or labeling/);
+    expect(fc).toMatchObject({ status: 400, json: { needsKey: "typesafe" } });
+    expect(fc.json.error).toMatch(/TypeSafe API key to configure fact-checking or labeling/);
     const prep = await call("POST", "/api/session/start", { mode: "replay", dir: "fixtures/conversation", features: { factcheck: false, labels: false } });
     expect(prep).toMatchObject({ status: 409, json: { preparing: true } });
   });
 
-  test("a picked label set needs the OpenRouter key; labels Off with fact-checking off does not", async () => {
+  test("a picked label set needs the TypeSafe key; labels Off with fact-checking off does not", async () => {
     const start = (body: Record<string, unknown>) => call("POST", "/api/session/start", { mode: "replay", dir: "fixtures/conversation", ...body });
-    expect(await start({ labelSet: "ai-podcast", features: { factcheck: false } })).toMatchObject({ status: 400, json: { needsKey: "openrouter" } });
+    expect(await start({ labelSet: "ai-podcast", features: { factcheck: false } })).toMatchObject({ status: 400, json: { needsKey: "typesafe" } });
     // no labelSet named: the built-in one, so the key is needed too
-    expect(await start({ features: { factcheck: false } })).toMatchObject({ status: 400, json: { needsKey: "openrouter" } });
+    expect(await start({ features: { factcheck: false } })).toMatchObject({ status: 400, json: { needsKey: "typesafe" } });
     // past the key check: stopped only because Apple's model is not ready in this test
     expect(await start({ labelSet: null, features: { factcheck: false } })).toMatchObject({ status: 409, json: { preparing: true } });
     expect(await start({ labelSet: "ai-podcast", features: { factcheck: false, labels: false } })).toMatchObject({ status: 409, json: { preparing: true } });
@@ -175,9 +175,9 @@ describe("the transcription routes, and what Start and Chat refuse", () => {
     expect((await call("PUT", "/api/transcription", { engine: "apple" })).json).toMatchObject({ engine: "apple" });
   });
 
-  test("Chat asks for the OpenRouter key before calling OpenRouter; reading past chats does not", async () => {
+  test("Chat asks for the OpenAI key before calling OpenAI; reading past chats does not", async () => {
     const r = await call("POST", "/api/chats", { model: "openai/gpt-6-luna" });
-    expect(r).toMatchObject({ status: 400, json: { needsKey: "openrouter" } });
+    expect(r).toMatchObject({ status: 400, json: { needsKey: "openai" } });
     expect(r.json.error).toMatch(/to use Chat/);
     expect((await call("GET", "/api/chats")).status).not.toBe(400);
   });

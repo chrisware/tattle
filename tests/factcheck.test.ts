@@ -474,7 +474,7 @@ describe("feedback loop: audits, rewrites, gate", () => {
 // ---------- the S2 client ----------
 
 import { Budget } from "../src/budget.ts";
-import { CHAT_URL, S2Client, type S2CallRow } from "../src/factcheck/s2.ts";
+import { S2Client, s2ChatUrl, s2ResponsesUrl, type S2CallRow } from "../src/factcheck/s2.ts";
 
 describe("S2 client", () => {
   const completion = (content: unknown, extra: Record<string, unknown> = {}) => new Response(JSON.stringify({
@@ -488,7 +488,7 @@ describe("S2 client", () => {
     const bodies: any[] = [];
     const rows: S2CallRow[] = [];
     const f = (async (url: string, init: RequestInit) => {
-      expect(url).toBe(CHAT_URL);
+      expect([s2ChatUrl("https://api.openai.com/v1"), s2ResponsesUrl("https://api.openai.com/v1")]).toContain(url);
       bodies.push(JSON.parse(init.body as string));
       return responses.shift()!();
     }) as unknown as typeof fetch;
@@ -502,15 +502,15 @@ describe("S2 client", () => {
     const v = await c.research({ claim_id: "c_1", speaker: "Daniel", utterance: "Jev is 445 times cheaper", segment: "x".repeat(3000) });
     expect(v.sources).toEqual([{ url: "https://src", title: "Src" }]);
     const b = bodies[0];
-    expect(b.model).toBe("openai/gpt-6-luna");
+    expect(b.model).toBe("gpt-6-luna");
     expect(b.reasoning).toEqual({ effort: "medium" });
-    expect(b.provider).toEqual({ order: ["openai"], allow_fallbacks: false, require_parameters: true, data_collection: "deny" });
-    expect(b.plugins).toEqual([{ id: "web", engine: "exa", max_results: 5 }]);
-    expect(b.response_format.type).toBe("json_schema");
-    expect(b.response_format.json_schema).toMatchObject({ name: "verdict", strict: true });
+    expect(b.tools).toEqual([{ type: "web_search" }]);
+    expect(b.provider).toBeUndefined();
+    expect(b.plugins).toBeUndefined();
+    expect(b.text.format).toMatchObject({ type: "json_schema", name: "verdict", strict: true });
     expect(b.temperature).toBeUndefined();
-    expect(b.messages[0].content).toContain("Today is 24 September 2026.");
-    expect(b.messages[1].content.length).toBeLessThan(1600);
+    expect(b.input[0].content).toContain("Today is 24 September 2026.");
+    expect(b.input[1].content.length).toBeLessThan(1600);
     expect(rows[0]).toMatchObject({ kind: "s2_call", purpose: "research", claim_id: "c_1", ok: true, cost_usd: 0.001, provider_returned: "OpenAI",
       usage: { prompt_tokens: 100, completion_tokens: 50, reasoning_tokens: 20, cached_tokens: 10, cost: 0.001 } });
     expect(budget.totals().s2).toBeCloseTo(0.001);
@@ -521,8 +521,10 @@ describe("S2 client", () => {
     await c.audit([{ utterance_id: "u_1", speaker: "A", text: "t" }]);
     await c.rewrite("input");
     expect(bodies[0].plugins).toBeUndefined();
-    expect(bodies[0].reasoning).toEqual({ effort: "low" });
+    expect(bodies[0].reasoning_effort).toBe("low");
+    expect(bodies[0].response_format.type).toBe("json_schema");
     expect(bodies[1].plugins).toBeUndefined();
+    expect(bodies[1].messages).toBeDefined();
   });
 
   test("falls back to json_object when strict output is rejected with the web plugin", async () => {
@@ -532,9 +534,9 @@ describe("S2 client", () => {
       () => completion(VERDICT()),
     ]);
     expect((await c.research({ speaker: "A", utterance: "u", segment: "" })).verdict).toBe("supported");
-    expect(bodies[1].response_format).toEqual({ type: "json_object" });
-    expect(bodies[1].messages[0].content).toBe(bodies[0].messages[0].content); // system prompt byte-identical
+    expect(bodies[1].text.format).toEqual({ type: "json_object" });
+    expect(bodies[1].input[0].content).toBe(bodies[0].input[0].content); // system prompt byte-identical
     await c.research({ speaker: "A", utterance: "u", segment: "" });
-    expect(bodies[2].response_format).toEqual({ type: "json_object" }); // sticky
+    expect(bodies[2].text.format).toEqual({ type: "json_object" }); // sticky
   });
 });

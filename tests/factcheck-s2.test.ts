@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Budget, BudgetExhaustedError } from "../src/budget.ts";
 import {
-  AUDIT_JSON_SCHEMA, AuditSchema, CHAT_URL, citationsOf, ContentError, finalizeVerdict, gradeOf, parseContent, researchSystemPrompt,
-  REWRITE_JSON_SCHEMA, S2Client, stripCitations, truncateWords, VERDICT_JSON_SCHEMA, VerdictSchema, type S2CallRow, type S2Purpose,
+  AUDIT_JSON_SCHEMA, AuditSchema, citationsOf, ContentError, finalizeVerdict, gradeOf, parseContent, researchSystemPrompt,
+  REWRITE_JSON_SCHEMA, S2Client, s2ChatUrl, s2ResponsesUrl, stripCitations, truncateWords, VERDICT_JSON_SCHEMA, VerdictSchema,
+  type S2CallRow, type S2Purpose,
 } from "../src/factcheck/s2.ts";
 import { HttpError } from "../src/jev/client.ts";
 import { fcConfig as cfg, VERDICT } from "./fakes/factcheck.ts";
@@ -102,7 +103,16 @@ const ok = (content: unknown, o: Parameters<typeof body>[1] = {}): Fake => () =>
 const err = (status: number, error: Record<string, unknown> = {}, headers: Record<string, string> = {}): Fake =>
   () => new Response(JSON.stringify({ error: { code: status, message: "e", ...error } }), { status, headers });
 
-function client(responses: Fake[], o: { budget?: Budget; sleep?: boolean; today?: boolean } = {}) {
+const S2_CHAT = s2ChatUrl("https://api.openai.com/v1");
+const S2_WEB = s2ResponsesUrl("https://api.openai.com/v1");
+const formatOf = (b: { response_format?: { type?: string }; text?: { format?: { type?: string } } }) =>
+  b.response_format?.type ?? b.text?.format?.type;
+const userOf = (b: { messages?: { content: string }[]; input?: { content: string }[] }) =>
+  b.messages?.[1]?.content ?? b.input?.[1]?.content ?? "";
+const systemOf = (b: { messages?: { content: string }[]; input?: { content: string }[] }) =>
+  b.messages?.[0]?.content ?? b.input?.[0]?.content ?? "";
+
+function client(responses: Fake[], o: { budget?: Budget; sleep?: boolean; today?: boolean; baseUrl?: string } = {}) {
   const bodies: any[] = [];
   const inits: RequestInit[] = [];
   const rows: S2CallRow[] = [];
@@ -110,7 +120,7 @@ function client(responses: Fake[], o: { budget?: Budget; sleep?: boolean; today?
   const starts: S2Purpose[] = [];
   const budget = o.budget ?? new Budget();
   const f = (async (url: string, init: RequestInit) => {
-    expect(url).toBe(CHAT_URL);
+    if (!o.baseUrl) expect([S2_CHAT, S2_WEB]).toContain(url);
     inits.push(init);
     bodies.push(JSON.parse(init.body as string));
     const next = responses.shift();
@@ -118,7 +128,8 @@ function client(responses: Fake[], o: { budget?: Budget; sleep?: boolean; today?
     return next();
   }) as unknown as typeof fetch;
   const c = new S2Client(cfg.app.s2, {
-    fetch: f, apiKey: "sk-or-k", budget, log: (r) => rows.push(r), onStart: (p) => starts.push(p), rand: () => 0,
+    fetch: f, apiKey: "sk-proj-k", budget, log: (r) => rows.push(r), onStart: (p) => starts.push(p), rand: () => 0,
+    ...(o.baseUrl ? { baseUrl: o.baseUrl } : {}),
     ...(o.sleep === false ? {} : { sleep: async (ms: number) => { sleeps.push(ms); } }),
     ...(o.today === false ? {} : { today: () => "24 September 2026" }),
   });
@@ -137,62 +148,64 @@ describe("S2Client: requests", () => {
     await c.research(input);
     const expected = new Date(T0).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
     expect(expected).toMatch(/^30 September 2026$/);
-    expect(bodies[0].messages[0].content).toContain(`Today is ${expected}.`);
+    expect(systemOf(bodies[0])).toContain(`Today is ${expected}.`);
   });
 
   it("research sends only the last 1500 characters of the segment, and the headers and timeout", async () => {
     const timeout = vi.spyOn(AbortSignal, "timeout");
     const { c, bodies, inits } = client([ok(VERDICT())]);
     await c.research({ ...input, segment: "a".repeat(500) + "b".repeat(1500) });
-    expect(bodies[0].messages[1].content).toBe(`Speaker: Anna\nUtterance: Jev is 445 times cheaper\nCurrent segment (context only): ${"b".repeat(1500)}`);
-    expect(inits[0].headers).toEqual({ Authorization: "Bearer sk-or-k", "Content-Type": "application/json", "X-OpenRouter-Title": "Tattle" });
+    expect(userOf(bodies[0])).toBe(`Speaker: Anna\nUtterance: Jev is 445 times cheaper\nCurrent segment (context only): ${"b".repeat(1500)}`);
+    expect(inits[0].headers).toEqual({ Authorization: "Bearer sk-proj-k", "Content-Type": "application/json" });
     expect(inits[0].method).toBe("POST");
     expect(timeout.mock.calls.map((x) => x[0])).toEqual([90_000]);
   });
 
-  it("research with another web engine sends that engine (smoke check 5's native run)", async () => {
+  it("research on the official host uses Responses web_search and ignores the old engine name", async () => {
     const { c, bodies, rows } = client([ok(VERDICT())]);
     await c.research(input, { engine: "native", max_results: 3 });
-    expect(bodies[0].plugins).toEqual([{ id: "web", engine: "native", max_results: 3 }]);
-    expect(rows[0]!.web_engine).toBe("native");
+    expect(bodies[0].tools).toEqual([{ type: "web_search" }]);
+    expect(bodies[0].plugins).toBeUndefined();
+    expect(rows[0]!.web_engine).toBe("openai");
   });
 
-  it("the fallback body: provider.require_parameters false, the schema suffix on the user message (not in the row), json_object", async () => {
+  it("the fallback body: schema suffix on the user message (not in the row), json_object, no provider fields", async () => {
     const { c, bodies, rows } = client([badRequest, ok(VERDICT())]);
     await c.research(input);
     const fb = bodies[1];
-    expect(fb.provider).toEqual({ ...cfg.app.s2.provider, require_parameters: false });
-    expect(fb.response_format).toEqual({ type: "json_object" });
-    expect(fb.plugins).toEqual([{ id: "web", engine: "exa", max_results: 5 }]);
-    expect(fb.messages[1].content).toBe(`${bodies[0].messages[1].content}\n\nReply with one JSON object only, matching this JSON schema:\n${JSON.stringify(VERDICT_JSON_SCHEMA)}`);
+    expect(fb.provider).toBeUndefined();
+    expect(fb.plugins).toBeUndefined();
+    expect(fb.tools).toEqual([{ type: "web_search" }]);
+    expect(formatOf(fb)).toBe("json_object");
+    expect(userOf(fb)).toBe(`${userOf(bodies[0])}\n\nReply with one JSON object only, matching this JSON schema:\n${JSON.stringify(VERDICT_JSON_SCHEMA)}`);
     expect(rows.map((r) => [r.ok, r.response_format])).toEqual([[false, "json_schema"], [true, "json_object"]]);
-    expect(rows[1].request!.user).toBe(bodies[0].messages[1].content);
+    expect(rows[1].request!.user).toBe(userOf(bodies[0]));
   });
 
   it("the fallback also triggers on a ContentError (a reply that does not match the schema) with web", async () => {
     const { c, bodies } = client([ok({ verdict: "maybe" }), ok(VERDICT())]);
     expect((await c.research(input)).verdict).toBe("supported");
-    expect(bodies.map((b) => b.response_format.type)).toEqual(["json_schema", "json_object"]);
+    expect(bodies.map(formatOf)).toEqual(["json_schema", "json_object"]);
   });
 
   it("a failed fallback rethrows and does not set the sticky flag: the next research tries json_schema again", async () => {
     const { c, bodies } = client([badRequest, ok("not json"), ok(VERDICT())]);
     await expect(c.research(input)).rejects.toBeInstanceOf(ContentError);
     await c.research(input);
-    expect(bodies.map((b) => b.response_format.type)).toEqual(["json_schema", "json_object", "json_schema"]);
+    expect(bodies.map(formatOf)).toEqual(["json_schema", "json_object", "json_schema"]);
   });
 
   it("a sticky json_object call that fails is not retried with another fallback", async () => {
     const { c, bodies } = client([badRequest, ok(VERDICT()), badRequest]);
     await c.research(input);
     await expect(c.research(input)).rejects.toThrow(/HTTP 400/);
-    expect(bodies.map((b) => b.response_format.type)).toEqual(["json_schema", "json_object", "json_object"]);
+    expect(bodies.map(formatOf)).toEqual(["json_schema", "json_object", "json_object"]);
   });
 
   it("non-400 errors (500 twice) with web do not fall back", async () => {
     const { c, bodies } = client([err(500), err(500), ok(VERDICT())]);
     await expect(c.research(input)).rejects.toThrow(/HTTP 500/);
-    expect(bodies.map((b) => b.response_format.type)).toEqual(["json_schema", "json_schema"]);
+    expect(bodies.map(formatOf)).toEqual(["json_schema", "json_schema"]);
   });
 
   it("an audit with a 400 throws without a fallback", async () => {
@@ -255,14 +268,14 @@ describe("S2Client: retries, errors, budget", () => {
     const b = client([err(401, { message: "No auth" })]);
     const e2 = await b.c.audit([]).catch((x) => x);
     expect(e2).toBeInstanceOf(HttpError);
-    expect(e2).toMatchObject({ status: 401, message: "OpenRouter rejected the API key (401): check OPENROUTER_API_KEY" });
+    expect(e2).toMatchObject({ status: 401, message: "the OpenAI-compatible endpoint rejected the API key (401): check OPENAI_API_KEY" });
   });
 
-  it("a transient 402 is retried", async () => {
+  it("an OpenRouter-shaped 402 is not special: it exhausts and is not retried", async () => {
     const { c, bodies, budget } = client([err(402, { metadata: { limit_source: "openrouter_in_flight_budget" } }), ok({ items: [] })]);
-    await c.audit([]);
-    expect(bodies).toHaveLength(2);
-    expect(budget.isExhausted).toBe(false);
+    await expect(c.audit([])).rejects.toThrow("provider credits or key limit exhausted (402)");
+    expect(bodies).toHaveLength(1);
+    expect(budget.isExhausted).toBe(true);
   });
 
   it("a refused budget throws before any fetch, with no log row and no onStart (unlike Jev's 0-attempt row)", async () => {
@@ -275,12 +288,13 @@ describe("S2Client: retries, errors, budget", () => {
     expect(starts).toEqual([]);
   });
 
-  it("a 200 with an error body is retried; a reply without usage.cost fails without a retry", async () => {
+  it("a 200 with an error body is retried; a reply without usage.cost is logged at zero", async () => {
     const a = client([() => new Response(JSON.stringify({ error: { message: "upstream" } })), ok({ items: [] })]);
     await a.c.audit([]);
     expect(a.bodies).toHaveLength(2);
-    const b = client([() => new Response(JSON.stringify({ choices: [], usage: { prompt_tokens: 1 } })), ok({ items: [] })]);
-    await expect(b.c.audit([])).rejects.toThrow("response without usage.cost rejected");
+    const b = client([() => new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ items: [] }) } }] }))]);
+    await b.c.audit([]);
+    expect(b.rows[0]).toMatchObject({ ok: true, cost_usd: 0 });
     expect(b.bodies).toHaveLength(1);
   });
 
@@ -306,6 +320,19 @@ describe("S2Client: retries, errors, budget", () => {
     await c.audit([]);
     expect(rows[0]!.usage).toEqual({ prompt_tokens: 0, completion_tokens: 0, reasoning_tokens: 0, cached_tokens: 0, cost: 0.0002 });
   });
+  it("a Responses API body is read as a verdict, with flat url citations and token usage", async () => {
+    const verdict = { ...VERDICT(), sources: [] };
+    const { c, rows } = client([() => new Response(JSON.stringify({
+      id: "resp_1", model: "gpt-6-luna",
+      output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(verdict), annotations: [{ type: "url_citation", url: "https://src", title: "Src" }] }] }],
+      usage: { input_tokens: 11, output_tokens: 7, output_tokens_details: { reasoning_tokens: 2 }, input_tokens_details: { cached_tokens: 1 } },
+    }))]);
+    const v = await c.research(input);
+    expect(v.sources).toEqual([{ url: "https://src", title: "Src" }]);
+    expect(rows[0]!.usage).toEqual({ prompt_tokens: 11, completion_tokens: 7, reasoning_tokens: 2, cached_tokens: 1, cost: 0 });
+    expect(rows[0]!.provider_returned).toBe("openai");
+  });
+
 
   it("the row: web_engine null for an audit, claim_id omitted when absent, the raw reply as response, the request as sent", async () => {
     const { c, rows } = client([ok({ items: [] }), ok(VERDICT())]);
@@ -314,7 +341,7 @@ describe("S2Client: retries, errors, budget", () => {
     expect(rows[0]).toMatchObject({ purpose: "audit", web_engine: null, response_format: "json_schema", response: '{"items":[]}', id: "gen-1", model_returned: "openai/gpt-6-luna-20260601", provider_returned: "OpenAI" });
     expect(rows[0]).not.toHaveProperty("claim_id");
     expect(rows[0]!.request!.user).toBe(JSON.stringify([{ utterance_id: "u_1", speaker: "A", text: "t" }], null, 1));
-    expect(rows[1]).toMatchObject({ purpose: "research", claim_id: "c_1", web_engine: "exa" });
+    expect(rows[1]).toMatchObject({ purpose: "research", claim_id: "c_1", web_engine: "openai" });
     expect(Date.parse(rows[0]!.at)).not.toBeNaN();
   });
 

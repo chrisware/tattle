@@ -1,7 +1,7 @@
 /** What a session spends on, shown in its cost breakdown. */
 export type Bucket = "transcription" | "jev" | "s2" | "chat";
 
-/** OpenRouter refused for good (credits or the key's own limit used up, a non-transient 402): later calls are not sent. */
+/** A provider refused for good (credits or the key's own limit used up, a non-transient 402): later calls are not sent. */
 export class BudgetExhaustedError extends Error {
   constructor(readonly cap: "provider", message: string) {
     super(message);
@@ -17,8 +17,8 @@ export interface BudgetOptions {
 
 /**
  * The spending ledger of a session (or of one Try or Create with AI request). It sets no dollar limit of its own
- * (removed on 29 September 2026): the OpenRouter key's own credit limit is the only one. Every external call runs
- * `assertCanSpend` before, which refuses only after OpenRouter has said the credit is used up, and `record` after.
+ * (removed on 29 September 2026). Every external call runs `assertCanSpend` before, which refuses only after a
+ * provider has said the credit is used up, and `record` after.
  */
 export class Budget {
   private readonly spent: Record<Bucket, number> = { transcription: 0, jev: 0, s2: 0, chat: 0 };
@@ -34,7 +34,7 @@ export class Budget {
     if (this.exhausted) throw this.exhausted;
   }
 
-  /** Marks the budget exhausted after a non-transient 402 from OpenRouter, and throws. */
+  /** Marks the budget exhausted after a non-transient 402 from a provider, and throws. */
   exhaust(cap: "provider", purpose: string, message: string): never {
     if (!this.exhausted) {
       this.exhausted = new BudgetExhaustedError(cap, message);

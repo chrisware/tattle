@@ -9,17 +9,17 @@ test("the API keys window saves only the key that was pasted", async ({ page }) 
   await page.locator('[data-open="dlg-keys"]').click();
   await expect(page.locator("#dlg-keys")).toHaveAttribute("open", "");
   await expect(page).toHaveURL(/[?&]panel=keys/);
-  await expect(page.locator("#keys .key-card")).toHaveCount(2);
-  await expect(page.locator("#keys")).toContainText("…1234"); // the saved OpenRouter key's last 4 characters
+  await expect(page.locator("#keys .key-card")).toHaveCount(3);
+  await expect(page.locator("#keys")).toContainText("…abcd"); // the saved OpenAI key's last 4 characters
 
   const save = page.locator("#keys .key-actions .btn.primary");
   await save.click();
   await expect(page.locator("#keys .key-actions .key-msg.bad")).toHaveText("Paste a key to save.");
 
-  await page.getByLabel("OpenRouter API key").fill("sk-or-v1-new-0000000000000000000000000000009876");
+  await page.getByLabel("TypeSafe API key").fill("ts-e2e-new-0000000000000000000000000000");
   const posted = page.waitForRequest((r) => r.url().endsWith("/api/setup/keys"));
   await save.click();
-  expect(Object.keys((await posted).postDataJSON())).toEqual(["openrouter"]);
+  expect(Object.keys((await posted).postDataJSON())).toEqual(["typesafe"]);
   await expect(page.locator(".toast.ok")).toHaveText("API key saved: the next call uses it");
 
   await page.locator("#dlg-keys .x, #dlg-keys [aria-label='Close']").first().click();

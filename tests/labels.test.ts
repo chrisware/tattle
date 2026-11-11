@@ -420,8 +420,10 @@ describe("Create with AI, as an interview, with a fake OpenRouter", () => {
   test("the model is the configured one, at high effort, with a strict schema; the message carries the draft and the checklist", async () => {
     const { a, bodies, rows } = run([turn(asModel(set))]);
     const r = await a.turn(system, ask, null);
-    expect(bodies[0].model).toBe("openai/gpt-6-luna");
-    expect(bodies[0].reasoning).toEqual({ effort: "high" });
+    expect(bodies[0].model).toBe("gpt-6-luna");
+    expect(bodies[0].reasoning_effort).toBe("high");
+    expect(bodies[0]).not.toHaveProperty("reasoning");
+    expect(bodies[0]).not.toHaveProperty("provider");
     expect(bodies[0].response_format).toMatchObject({ type: "json_schema", json_schema: { name: "label_set_draft", strict: true } });
     expect(bodies[0].messages[0].content).toContain("thumbs-up"); // the icon list
     expect(bodies[0].messages[0].content).toContain("## Why the rules are what they are");
