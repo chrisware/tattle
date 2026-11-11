@@ -101,6 +101,8 @@ export type CaptureStatus = { type: string; [k: string]: unknown };
 
 export interface NativeCaptureOptions {
   mic?: string;
+  /** A multi-channel input. Channel 0 is host, channel 1 is remote. Mutually exclusive with the microphone flags. */
+  desk?: string;
   host?: boolean;
   remote?: boolean;
   bin?: string;
@@ -129,13 +131,16 @@ export function startNativeCapture(opts: NativeCaptureOptions = {}): Promise<Nat
   if (!opts.spawn && !existsSync(bin)) return Promise.reject(new Error(`the capture helper is not built: run npm run build:capture (${bin})`));
   const useHost = opts.host ?? true;
   const useRemote = opts.remote ?? true;
+  const desk = opts.desk?.trim();
   const sessionStart = opts.sessionStartEpochMs ?? Date.now();
   const maxRestarts = opts.maxRestarts ?? 3;
   const restartDelayMs = opts.restartDelayMs ?? 1000;
   const streams = new Map<StreamName, LiveStream>();
-  if (useHost) streams.set("host", new LiveStream("host"));
-  if (useRemote) streams.set("remote", new LiveStream("remote"));
-  const args = [...(opts.mic ? ["--mic", opts.mic] : []), ...(useHost ? [] : ["--no-mic"]), ...(useRemote ? [] : ["--no-system"])];
+  const args = desk
+    ? ["--desk", desk]
+    : [...(opts.mic ? ["--mic", opts.mic] : []), ...(useHost ? [] : ["--no-mic"]), ...(useRemote ? [] : ["--no-system"])];
+  if (desk || useHost) streams.set("host", new LiveStream("host"));
+  if (desk || useRemote) streams.set("remote", new LiveStream("remote"));
 
   let child: HelperProcess | null = null;
   let stopping = false;

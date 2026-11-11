@@ -1,8 +1,10 @@
 // tattle-capture: captures the built-in microphone (host) and a global Core Audio tap of all system output (remote),
-// and writes framed 16 kHz PCM16 to stdout. Status goes to stderr as JSON lines.
+// or one multi-channel input split into those same two streams (`--desk`), and writes framed 16 kHz PCM16 to stdout.
+// Status goes to stderr as JSON lines.
 //
 //   tattle-capture --list-devices
 //   tattle-capture [--mic builtin|<uid>] [--no-mic] [--no-system] [--tap apps|global]
+//   tattle-capture --desk <uid>
 //   tattle-capture --probe <seconds>
 import Darwin
 import Foundation
@@ -25,6 +27,8 @@ var listDevices = false
 var micSpec = "builtin"
 var useMic = true
 var useSystem = true
+var deskSpec: String?
+var sawCaptureFlag = false
 var probeSeconds: Double?
 // `apps` (default): the tap follows the apps playing sound. `global`: the old global tap, which can make other apps hang
 // when they start a microphone. CONVERSATION_CAPTURE_TAP=global sets it through the engine, which passes no flag.
@@ -33,36 +37,52 @@ var args = CommandLine.arguments.dropFirst()
 while let a = args.popFirst() {
     switch a {
     case "--list-devices": listDevices = true
+    case "--desk":
+        guard let v = args.popFirst(), !v.isEmpty else { fail("--desk needs a device id", code: 64) }
+        deskSpec = v
     case "--mic":
+        sawCaptureFlag = true
         guard let v = args.popFirst() else { fail("--mic needs a value", code: 64) }
         micSpec = v
-    case "--no-mic": useMic = false
-    case "--no-system": useSystem = false
+    case "--no-mic":
+        sawCaptureFlag = true
+        useMic = false
+    case "--no-system":
+        sawCaptureFlag = true
+        useSystem = false
     case "--tap":
+        sawCaptureFlag = true
         guard let v = args.popFirst() else { fail("--tap needs apps or global", code: 64) }
         tapMode = v
     case "--probe":
         guard let v = args.popFirst().flatMap(Double.init), v > 0 else { fail("--probe needs a number of seconds", code: 64) }
         probeSeconds = v
     case "-h", "--help":
-        print("usage: tattle-capture --list-devices | [--mic builtin|<uid>] [--no-mic] [--no-system] [--tap apps|global] | --probe <seconds>")
+        print("usage: tattle-capture --list-devices | [--mic builtin|<uid>] [--no-mic] [--no-system] [--tap apps|global] | --desk <uid> | --probe <seconds>")
         exit(0)
     default: fail("unknown argument \(a)", code: 64)
     }
 }
 
+if deskSpec != nil && sawCaptureFlag {
+    fail("--desk cannot be combined with --mic, --no-mic, --no-system, or --tap", code: 64)
+}
+
 if listDevices {
     for d in Devices.inputs() {
-        let obj: [String: Any] = ["uid": d.uid, "name": d.name, "transport": d.transport, "isDefault": d.isDefault]
-        if let data = try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys]) {
+        if let data = try? JSONSerialization.data(withJSONObject: Devices.listing(d), options: [.sortedKeys]) {
             FileHandle.standardOutput.write(data + Data("\n".utf8))
         }
     }
     exit(0)
 }
 
+if deskSpec != nil {
+    useMic = false
+    useSystem = false
+}
 if tapMode != "apps" && tapMode != "global" { fail("--tap must be apps or global", code: 64) }
-if !useMic && !useSystem { fail("nothing to capture: both --no-mic and --no-system", code: 64) }
+if deskSpec == nil && !useMic && !useSystem { fail("nothing to capture: both --no-mic and --no-system", code: 64) }
 
 // ---------- sinks ----------
 
@@ -105,11 +125,14 @@ final class NullSink: FrameSink {
 guard #available(macOS 14.2, *) else { fail("macOS 14.2 or later is required for Core Audio taps", code: 69) }
 
 var streams: [UInt8] = []
-if useMic { streams.append(0) }
-if useSystem { streams.append(1) }
+if deskSpec != nil {
+    streams = [0, 1]
+} else {
+    if useMic { streams.append(0) }
+    if useSystem { streams.append(1) }
+}
 let sink: FrameSink = probeSeconds == nil ? StdoutSink() : NullSink()
 let clock = ClockLock(streams: streams, sink: sink)
-
 var mic: Mic?
 var stopTap: (() -> Void)?
 
@@ -123,7 +146,15 @@ DispatchQueue.global().async {
 }
 var started: [String: Any] = ["type": "started", "epochMs": clock.epochMs]
 
-if useMic {
+if let desk = deskSpec {
+    guard let device = Devices.resolveMic(desk) else { fail("desk input \(desk) not found", code: 2) }
+    if let why = Devices.deskRefusal(channels: device.channels, name: device.name) { fail(why, code: 2) }
+    let m = Mic(device: device, channels: 2)
+    do { try m.start(clock: clock, streams: [0, 1]) } catch { fail("desk: \(error)", code: 3) }
+    mic = m
+    started["host"] = ["device": device.name, "uid": device.uid, "channel": 0]
+    started["remote"] = ["device": device.name, "uid": device.uid, "channel": 1]
+} else if useMic {
     guard let device = Devices.resolveMic(micSpec) else { fail("microphone \(micSpec) not found", code: 2) }
     let m = Mic(device: device)
     do { try m.start(clock: clock, stream: 0) } catch { fail("microphone: \(error)", code: 3) }
@@ -153,8 +184,8 @@ func shutdown(code: Int32 = 0) -> Never {
         _ = secs
         var out: [String: Any] = [:]
         clock.queue.sync {
-            if useMic { out["host"] = clock.levels[0]!.json }
-            if useSystem { out["remote"] = clock.levels[1]!.json }
+            if useMic || deskSpec != nil { out["host"] = clock.levels[0]!.json }
+            if useSystem || deskSpec != nil { out["remote"] = clock.levels[1]!.json }
         }
         if let data = try? JSONSerialization.data(withJSONObject: out, options: [.sortedKeys]) {
             FileHandle.standardOutput.write(data + Data("\n".utf8))

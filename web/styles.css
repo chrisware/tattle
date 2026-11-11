@@ -663,6 +663,7 @@ dialog.ask form { display: contents; }
 /* Start live's microphone and people pickers */
 .start-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .start-fields .select { width: 100%; font: 400 14px/1 var(--body); letter-spacing: 0; text-transform: none; color: var(--ink); }
+.start-fields .source-field { grid-column: 1 / -1; }
 /* export: the audio choices, as radio cards */
 .choice-list { display: grid; gap: 6px; }
 .choice {

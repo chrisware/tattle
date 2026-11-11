@@ -9,6 +9,7 @@ import { setAppPaths } from "../src/paths.ts";
 import { writeZip } from "../src/store/zip.ts";
 import { checkSeal, readSeal, SigningKey, type SealPayload } from "../src/store/seal.ts";
 import { SettingsStore } from "../src/settings.ts";
+import { loadConfig } from "../src/config.ts";
 import { fakeTimestampFetch } from "./fakes/timestamp.ts";
 import { requireAssets } from "./helpers.ts";
 import {
@@ -235,6 +236,35 @@ describe("Engine.start", () => {
     live.status!("health", { capture: { type: "started" } }); // no remote: nothing to follow
     expect(setOutput.mock.calls.length).toBe(calls);
     await end(engine, live);
+  });
+
+  test("a desk start opens that device as both streams, one voice each, and never follows the speakers", async () => {
+    const live = fakeLive();
+    let desk: string | undefined;
+    const capture = async (mic: string | undefined, onStatus: (type: "error" | "health", data: Record<string, unknown>) => void, d?: string) => {
+      desk = d;
+      return live.capture(mic, onStatus);
+    };
+    const config = loadConfig();
+    config.app.echoGate.mode = "always";
+    const { engine } = offlineEngine({ config, live: capture });
+    await engine.start({ mode: "live", desk: "BlackHole2ch_UID", voices: 4, features: OFF });
+    expect(desk).toBe("BlackHole2ch_UID");
+    expect(live.mic).toBeUndefined();
+    expect(engine.current!.voices).toEqual({ host: 1, remote: 1 });
+    expect(engine.current!.echoGate.active).toBe(false);
+    engine.current!.setOutput("speakers", "MacBook Speakers");
+    live.status!("health", { capture: { remote: { outputKind: "speakers", outputDevice: "MacBook Speakers" } } });
+    expect(engine.current!.echoGate.active).toBe(false);
+    await end(engine, live);
+  });
+
+  test("desk and a microphone together are refused, and a blank desk id is refused", async () => {
+    let called = 0;
+    const { engine } = offlineEngine({ live: async () => { called++; return { sources: [new Endless("host")], stop: async () => {} }; } });
+    await expect(engine.start({ mode: "live", mic: "x", desk: "y", features: OFF })).rejects.toMatchObject({ status: 400, message: "choose a microphone or a two-channel input, not both" });
+    await expect(engine.start({ mode: "live", desk: "  ", features: OFF })).rejects.toMatchObject({ status: 400, message: "desk needs a device id" });
+    expect(called).toBe(0);
   });
 
   test.fails("BUG §11.2: a capture whose session cannot be built is stopped, not left running", async () => {

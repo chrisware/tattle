@@ -170,6 +170,19 @@ describe("loadDevices", () => {
     await P.loadDevices();
     expect(sel.title).toBe("plain");
   });
+
+  test("two channels lists only inputs with at least two channels", async () => {
+    fake.devices!.mockResolvedValue([
+      { uid: "air", name: "AirPods", transport: "bluetooth", isDefault: false, channels: 1 },
+      { uid: "bh", name: "BlackHole 2ch", transport: "virtual", isDefault: false, channels: 2 },
+    ]);
+    $<HTMLSelectElement>("#source").value = "desk";
+    await P.loadDevices();
+    expect([...$<HTMLSelectElement>("#mic").options].map((o) => `${o.value}=${o.textContent}`)).toEqual(["bh=BlackHole 2ch (virtual)"]);
+    expect($("#voices-field").hidden).toBe(true);
+    expect($("#desk-note").hidden).toBe(false);
+    expect($("#mic-label").textContent).toBe("Input");
+  });
 });
 
 describe("the menu footer (bindAbout)", () => {
@@ -531,6 +544,24 @@ describe("the Start live window", () => {
     expect(fake.startLive).toHaveBeenCalledWith("air", 2, { factcheck: true, labels: true }, { labelSet: "ai-podcast", stories: ["Story one", "Story two"] });
     expect([localStorage.getItem("pa.mic"), localStorage.getItem("pa.labelSet")]).toEqual(["air", "ai-podcast"]);
     expect($<HTMLDialogElement>("#dlg-start").open).toBe(false);
+  });
+
+  test("two channels starts that input, sends no microphone or voice count, and remembers the desk", async () => {
+    await openWith({ key: true });
+    fake.devices!.mockResolvedValue([
+      { uid: "air", name: "AirPods", transport: "bluetooth", isDefault: false, channels: 1 },
+      { uid: "bh", name: "BlackHole 2ch", transport: "virtual", isDefault: false, channels: 2 },
+    ]);
+    $<HTMLSelectElement>("#source").value = "desk";
+    $<HTMLSelectElement>("#source").dispatchEvent(new Event("change"));
+    await flush();
+    $<HTMLSelectElement>("#mic").value = "bh";
+    $<HTMLSelectElement>("#voices").value = "4";
+    $("#start-go").click();
+    await flush();
+    expect(fake.startDesk).toHaveBeenCalledWith("bh", { factcheck: true, labels: true }, { labelSet: "ai-podcast", stories: [] });
+    expect(fake.startLive).not.toHaveBeenCalled();
+    expect([localStorage.getItem("pa.desk"), localStorage.getItem("pa.mic"), localStorage.getItem("pa.source")]).toEqual(["bh", null, "desk"]);
   });
 
   test("with no microphone to choose and labels off, Start sends no mic, no set and no stories, and saves nothing", async () => {

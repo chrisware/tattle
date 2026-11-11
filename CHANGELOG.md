@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- Start live can use a two-channel input: channel 1 is the interviewer and channel 2 is the guest. The microphone and the system tap stay off.
+
 ## [1.1.0] - 2026-10-28
 
 ### Added

@@ -20,16 +20,18 @@ final class MonoConverter {
         converter = conv
     }
 
-    /// Downmixes to mono by taking channel 0, then resamples.
-    func convert(_ input: AVAudioPCMBuffer) -> [Float] {
+    /// Downmixes to mono by taking `channel` (0 unless a desk input is split), then resamples.
+    func convert(_ input: AVAudioPCMBuffer, channel: Int = 0) -> [Float] {
         let n = Int(input.frameLength)
-        guard n > 0, let data = input.floatChannelData,
+        let channels = Int(input.format.channelCount)
+        guard n > 0, channel >= 0, channel < channels, let data = input.floatChannelData,
               let mono = AVAudioPCMBuffer(pcmFormat: monoFormat, frameCapacity: AVAudioFrameCount(n)) else { return [] }
         mono.frameLength = AVAudioFrameCount(n)
-        let stride = input.format.isInterleaved ? Int(input.format.channelCount) : 1
-        let src = data[0]
+        let stride = input.format.isInterleaved ? channels : 1
+        let src = input.format.isInterleaved ? data[0] : data[channel]
+        let offset = input.format.isInterleaved ? channel : 0
         let dst = mono.floatChannelData![0]
-        for i in 0..<n { dst[i] = src[i * stride] }
+        for i in 0..<n { dst[i] = src[i * stride + offset] }
         let capacity = AVAudioFrameCount(Double(n) * 16_000 / monoFormat.sampleRate) + 64
         guard let out = AVAudioPCMBuffer(pcmFormat: MonoConverter.outFormat, frameCapacity: capacity) else { return [] }
         var consumed = false
@@ -54,14 +56,14 @@ final class AdaptiveConverter {
     private var current: MonoConverter?
     private var rate: Double = 0
 
-    func convert(_ input: AVAudioPCMBuffer) -> [Float] {
+    func convert(_ input: AVAudioPCMBuffer, channel: Int = 0) -> [Float] {
         let r = input.format.sampleRate
         guard r > 0 else { return [] }
         if r != rate || current == nil {
             current = MonoConverter(sourceRate: r)
             rate = r
         }
-        return current?.convert(input) ?? []
+        return current?.convert(input, channel: channel) ?? []
     }
 }
 

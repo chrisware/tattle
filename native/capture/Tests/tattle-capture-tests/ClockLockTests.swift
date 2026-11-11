@@ -218,6 +218,18 @@ func buffer(rate: Double, n: Int, values: [Float], interleaved: Bool = false) ->
         #expect(out.suffix(100).allSatisfy { $0 >= 0 })
     }
 
+    @Test func takesChannelOneOfAnInterleavedBuffer() {
+        let conv = MonoConverter(sourceRate: 16_000)!
+        var out: [Float] = []
+        for _ in 0..<4 { out += conv.convert(buffer(rate: 16_000, n: 1600, values: [0.5, -0.5], interleaved: true), channel: 1) }
+        #expect(out.suffix(100).allSatisfy { $0 < -0.4 })
+    }
+
+    @Test func aMissingChannelGivesNothing() {
+        let conv = MonoConverter(sourceRate: 16_000)!
+        #expect(conv.convert(buffer(rate: 16_000, n: 1600, values: [0.5]), channel: 1).isEmpty)
+    }
+
     @Test func emptyBufferGivesNothing() {
         let conv = MonoConverter(sourceRate: 48_000)!
         #expect(conv.convert(buffer(rate: 48_000, n: 0, values: [0.3])).isEmpty)
