@@ -185,7 +185,7 @@ describe("Session construction", () => {
     bus.subscribe((e) => live.push(e.type));
     const r = await (s as any).services.ask({ a: 1 }, { q: { type: "noul", instruction: "Is it?", criteria: { true: "yes", false: "no" } } }, { purpose: "utterance", utterance_id: "u_1" });
     expect(r.answers.q).toMatchObject({ noul: 0.5 });
-    expect(urls[0]).toMatch(/alpha\/decisions Bearer ts-session$/);
+    expect(urls[0]).toMatch(/api\.typesafe\.ai\/v1\/systemone Bearer ts-session$/);
     expect(live).toContain("call.started");
     expect(live).toContain("call");
     expect(bus.history().some((e) => e.type === "call" || e.type === "call.started")).toBe(false);
