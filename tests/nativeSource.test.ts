@@ -309,6 +309,13 @@ describe("native capture adapter, more (fake helper)", () => {
     }
   });
 
+  test("desk capture spawns --desk and both streams, ignoring mic flags", async () => {
+    const { cap, spawned } = await capture({ desk: "BlackHole2ch_UID", mic: "USB", host: false, remote: false });
+    expect(spawned).toEqual([["--desk", "BlackHole2ch_UID"]]);
+    expect(cap.sources.map((s) => s.stream)).toEqual(["host", "remote"]);
+    await cap.stop();
+  });
+
   test("host:false exposes only the remote source and drops host frames", async () => {
     const { cap, helpers } = await capture({ host: false });
     expect(cap.sources.map((s) => s.stream)).toEqual(["remote"]);

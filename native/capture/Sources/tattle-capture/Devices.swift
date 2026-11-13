@@ -9,6 +9,8 @@ enum Devices {
         let name: String
         let transport: String
         let isDefault: Bool
+        /// Input channels on the device. Missing or unreadable counts as 0, so a desk start refuses it.
+        let channels: Int
     }
 
     static func address(_ selector: AudioObjectPropertySelector, _ scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal) -> AudioObjectPropertyAddress {
@@ -114,11 +116,32 @@ enum Devices {
         return size > 0
     }
 
+    /// Sum of `mNumberChannels` across the input scope's stream configuration. 0 when it cannot be read.
+    static func inputChannelCount(_ id: AudioDeviceID) -> Int {
+        var addr = address(kAudioDevicePropertyStreamConfiguration, kAudioObjectPropertyScopeInput)
+        var size: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(id, &addr, 0, nil, &size) == noErr, size > 0 else { return 0 }
+        let raw = UnsafeMutableRawPointer.allocate(byteCount: Int(size), alignment: MemoryLayout<AudioBufferList>.alignment)
+        defer { raw.deallocate() }
+        guard AudioObjectGetPropertyData(id, &addr, 0, nil, &size, raw) == noErr else { return 0 }
+        let list = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer<AudioBufferList>(raw.assumingMemoryBound(to: AudioBufferList.self)))
+        return list.reduce(0) { $0 + Int($1.mNumberChannels) }
+    }
+
+    static func listing(_ d: Input) -> [String: Any] {
+        ["uid": d.uid, "name": d.name, "transport": d.transport, "isDefault": d.isDefault, "channels": d.channels]
+    }
+
+    /// Nil when a device can feed a two-channel desk capture. The message names the device and the count it has.
+    static func deskRefusal(channels: Int, name: String) -> String? {
+        channels >= 2 ? nil : "desk capture needs 2 input channels, \(name) has \(channels)"
+    }
+
     static func inputs() -> [Input] {
         let def = defaultInput()
         return allDevices().filter(hasInput).compactMap { id in
             guard let uid = uid(id) else { return nil }
-            return Input(id: id, uid: uid, name: name(id), transport: transportName(transportType(id)), isDefault: id == def)
+            return Input(id: id, uid: uid, name: name(id), transport: transportName(transportType(id)), isDefault: id == def, channels: inputChannelCount(id))
         }
     }
 

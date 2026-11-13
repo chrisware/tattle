@@ -71,6 +71,9 @@ export function ask(title: string, opts: { message?: string; input?: boolean; va
 // ---------- header: session, controls, menu ----------
 
 const MIC_KEY = "pa.mic";
+const DESK_KEY = "pa.desk";
+const SOURCE_KEY = "pa.source";
+
 
 /**
  * Lists the Mac's microphones. Called each time Start live opens, because earbuds or a USB mic connected after the page
@@ -79,12 +82,22 @@ const MIC_KEY = "pa.mic";
 export async function loadDevices() {
   const sel = $<HTMLSelectElement>("#mic");
   if (!sel) return;
+  const desk = $<HTMLSelectElement>("#source")?.value === "desk";
+  const label = $("#mic-label");
+  if (label) label.textContent = desk ? "Input" : "Microphone";
+  const voices = $("#voices-field");
+  if (voices) voices.hidden = desk;
+  const note = $("#desk-note");
+  if (note) note.hidden = !desk;
   let want = sel.value;
-  try { want = localStorage.getItem(MIC_KEY) ?? want; } catch { /* storage may be unavailable */ }
+  try { want = localStorage.getItem(desk ? DESK_KEY : MIC_KEY) ?? want; } catch { /* storage may be unavailable */ }
   try {
     const devices = await api.devices();
-    replace(sel, h("option", { value: "builtin" }, "Built-in microphone"),
-      devices.filter((d) => d.transport !== "builtin").map((d) => h("option", { value: d.uid }, `${d.name} (${d.transport})`)));
+    const list = desk
+      ? devices.filter((d) => (d.channels ?? 1) >= 2)
+      : devices.filter((d) => d.transport !== "builtin");
+    replace(sel, ...(desk ? [] : [h("option", { value: "builtin" }, "Built-in microphone")]),
+      ...list.map((d) => h("option", { value: d.uid }, `${d.name} (${d.transport})`)));
     sel.title = "";
     if ([...sel.options].some((o) => o.value === want)) sel.value = want;
   } catch (e) {
@@ -299,6 +312,11 @@ async function fillLabelPicker(on: boolean) {
  * turning one on then asks for the key, in this window.
  */
 function openStartLive() {
+  const source = $<HTMLSelectElement>("#source");
+  try {
+    const saved = localStorage.getItem(SOURCE_KEY);
+    if (source && (saved === "desk" || saved === "call")) source.value = saved;
+  } catch { /* storage may be unavailable */ }
   void loadDevices();
   // each show starts at "Any number": who is on the call changes from show to show
   const voices = $<HTMLSelectElement>("#voices");
@@ -340,16 +358,20 @@ function bindStartLive() {
     const features = { factcheck: factcheckOn(), labels: lb };
     if ((features.factcheck || lb) && !keySet("typesafe")) return askTypesafe(start);
     if (preparing()) return;
+    const desk = $<HTMLSelectElement>("#source")?.value === "desk";
     const mic = $<HTMLSelectElement>("#mic")?.value;
+    if (desk && !mic) return toast("Choose a two-channel input");
     const labelSet = lb ? labelPick()!.value : null;
     const stories = lb ? ($<HTMLTextAreaElement>("#start-stories")?.value ?? "").split("\n").map((x) => x.trim()).filter(Boolean) : [];
     try {
-      if (mic) localStorage.setItem(MIC_KEY, mic);
+      if (mic) localStorage.setItem(desk ? DESK_KEY : MIC_KEY, mic);
+      if ($("#source")) localStorage.setItem(SOURCE_KEY, desk ? "desk" : "call");
       if (labelSet) localStorage.setItem(LABELS_KEY, labelSet);
     } catch { /* storage may be unavailable */ }
     void (async () => {
       try {
-        await api.startLive(mic || undefined, voicesOnCall(), features, { labelSet, stories });
+        if (desk) await api.startDesk(mic!, features, { labelSet, stories });
+        else await api.startLive(mic || undefined, voicesOnCall(), features, { labelSet, stories });
         $<HTMLDialogElement>("#dlg-start")!.close();
       } catch (e) {
         // the server knows best which key is missing (one removed from .env, say): ask for it here
@@ -362,6 +384,10 @@ function bindStartLive() {
     })();
   };
   $("#start-go")?.addEventListener("click", start);
+  $("#source")?.addEventListener("change", () => {
+    try { localStorage.setItem(SOURCE_KEY, $<HTMLSelectElement>("#source")!.value); } catch { /* storage may be unavailable */ }
+    void loadDevices();
+  });
 }
 
 /** Opens a settings window from inside the page (the Transcription window, from Start live). */

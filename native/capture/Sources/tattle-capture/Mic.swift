@@ -3,13 +3,14 @@ import AVFoundation
 import CoreAudio
 import Foundation
 
-/// The host stream: one explicitly chosen input device through AVAudioEngine. Voice processing stays off.
+/// One input device, one or more channels, each pushed as its own stream. Voice processing stays off.
+/// Call capture uses channel 0. Desk capture uses channel 0 as host and channel 1 as remote.
 final class Mic {
     private let engine = AVAudioEngine()
-    private let converter = AdaptiveConverter()
+    private let converters: [AdaptiveConverter]
     private var observer: NSObjectProtocol?
     private weak var clock: ClockLock?
-    private var stream: UInt8 = 0
+    private var streams: [UInt8] = [0]
     private var stopped = false
     private var restarts: [Date] = []
     private let restartQueue = DispatchQueue(label: "tattle-capture.mic-restart")
@@ -20,13 +21,19 @@ final class Mic {
     private var gaveUpAt: Date?
     let device: Devices.Input
 
-    init(device: Devices.Input) {
+    init(device: Devices.Input, channels: Int = 1) {
         self.device = device
+        let n = max(1, channels)
+        self.converters = (0..<n).map { _ in AdaptiveConverter() }
     }
 
     func start(clock: ClockLock, stream: UInt8) throws {
+        try start(clock: clock, streams: [stream])
+    }
+
+    func start(clock: ClockLock, streams: [UInt8]) throws {
         self.clock = clock
-        self.stream = stream
+        self.streams = streams.isEmpty ? [0] : streams
         try configure()
         // Another app (a WhatsApp or Riverside call, a Bluetooth headset switching to its call profile) can change the
         // audio configuration. macOS then either stops this engine or, worse, leaves it "running" with no buffers
@@ -95,14 +102,17 @@ final class Mic {
         guard st == noErr else { throw CaptureError.message("could not select \(device.name) (OSStatus \(st))") }
         let format = input.inputFormat(forBus: 0)
         guard format.sampleRate > 0 else { throw CaptureError.message("the microphone reports no usable format") }
-        let conv = converter
-        let stream = self.stream
+        let convs = converters
+        let ids = self.streams
         input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, time in
             guard let self, let clock = self.clock else { return }
             self.markAlive()
             let host = time.isHostTimeValid ? time.hostTime : mach_absolute_time()
-            let samples = conv.convert(buffer)
-            if !samples.isEmpty { clock.push(stream: stream, samples: samples, hostTime: host) }
+            let n = min(convs.count, ids.count)
+            for i in 0..<n {
+                let samples = convs[i].convert(buffer, channel: ids.count == 1 ? 0 : i)
+                if !samples.isEmpty { clock.push(stream: ids[i], samples: samples, hostTime: host) }
+            }
         }
         engine.prepare()
         markAlive() // the watchdog counts from this start

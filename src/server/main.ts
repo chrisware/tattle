@@ -118,7 +118,7 @@ export interface TranscriptionApi {
 interface StartCommon { name?: string; voices?: number; features?: Partial<Features>; labelSet?: string | null; stories?: string[] }
 export type StartRequest =
   | ({ mode: "replay"; dir?: string; sessionId?: string; speed?: Speed | "1" } & StartCommon)
-  | ({ mode: "live"; mic?: string } & StartCommon);
+  | ({ mode: "live"; mic?: string; desk?: string } & StartCommon);
 
 function parseStories(v: unknown): string[] {
   if (v === undefined || v === null) return [];
@@ -208,7 +208,7 @@ export interface EngineOptions {
   sessionsDir?: string;
   session?: Partial<SessionOptions>;
   /** Tier 2: starts the native capture helper. */
-  live?: (mic: string | undefined, onStatus: CaptureStatusHandler) => Promise<LiveCapture>;
+  live?: (mic: string | undefined, onStatus: CaptureStatusHandler, desk?: string) => Promise<LiveCapture>;
   devices?: () => Promise<unknown[]>;
   /** The chat window's network access (tests pass a fake). */
   fetch?: typeof fetch;
@@ -644,6 +644,7 @@ export class Engine implements EngineApi {
     let sources: AudioSource[];
     let mode: "replay" | "live";
     let liveText = false;
+    let desk = "";
     if (req?.mode === "replay") {
       const dir = req.sessionId ? this.libraryCall(() => this.library.dirOf(req.sessionId!)) : req.dir;
       if (typeof dir !== "string" || !dir) throw new ApiError(400, "dir or sessionId is required");
@@ -652,15 +653,18 @@ export class Engine implements EngineApi {
       mode = "replay";
       liveText = speed === 1; // streaming text only makes sense at real-time pace
     } else if (req?.mode === "live") {
+      desk = typeof req.desk === "string" ? req.desk.trim() : "";
+      if (req.desk !== undefined && !desk) throw new ApiError(400, "desk needs a device id");
+      if (desk && req.mic) throw new ApiError(400, "choose a microphone or a two-channel input, not both");
       if (!this.opts.live) throw new ApiError(501, "live capture is not available");
       this.captureDetail = null;
-      this.capture = await this.opts.live(req.mic, (type, data) => {
+      this.capture = await this.opts.live(desk ? undefined : req.mic, (type, data) => {
         if (type === "error") this.session?.emit("error", data);
         else {
           this.captureDetail = (data.capture as Record<string, unknown>) ?? data;
-          this.followOutput();
+          if (!desk) this.followOutput();
         }
-      });
+      }, desk || undefined);
       sources = this.capture.sources;
       mode = "live";
       liveText = true;
@@ -672,11 +676,14 @@ export class Engine implements EngineApi {
     const config = structuredClone(this.config);
     const s2Model = this.settings.read().models?.s2;
     if (s2Model) config.app.s2.model = s2Model;
+    if (desk) config.app.echoGate.mode = "never";
     this.session = new Session({
       mode, sources, config, bus: this.bus, sessionsDir: this.opts.sessionsDir,
       healthDetail: () => this.captureDetail, liveText, features, engine, labelSet, stories,
-      // how many people are on the call (the remote stream); 0 means no limit
-      ...(Number.isInteger(req.voices) && req.voices! >= 0 ? { voices: { remote: req.voices } } : {}),
+      // a desk input is one person per channel; a call still takes the remote voice count (0 means no limit)
+      ...(desk
+        ? { voices: { host: 1, remote: 1 } }
+        : Number.isInteger(req.voices) && req.voices! >= 0 ? { voices: { remote: req.voices } } : {}),
       ...this.opts.session,
       keys: {
         ...this.opts.session?.keys,
@@ -691,7 +698,7 @@ export class Engine implements EngineApi {
         this.sealEnded(s.id, s.store.dir);
       })
       .catch((e) => console.error("session failed:", e));
-    if (mode === "live") this.followOutput(); // after session.started: the helper may already have said where the call plays
+    if (mode === "live" && !desk) this.followOutput(); // after session.started: the helper may already have said where the call plays
     // after run() has written session.json, which makes the folder a recording the library can name
     if (typeof req.name === "string" && req.name.trim()) this.library.update(s.id, { name: req.name });
     return { sessionId: s.id };
@@ -1232,7 +1239,7 @@ export function bootEngine() {
   });
   engine = new Engine({
     config, transcription,
-    live: (mic, onStatus) => startNativeCapture({ mic: mic === "builtin" ? undefined : mic, onStatus }),
+    live: (mic, onStatus, desk) => startNativeCapture({ mic: desk ? undefined : (mic === "builtin" ? undefined : mic), desk, onStatus }),
     devices: () => listDevices(),
   });
   return { keys, config, engine, transcription, ready, server: createApiServer(engine, { setup, ready }) };

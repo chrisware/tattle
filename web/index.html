@@ -252,13 +252,20 @@
     <div class="dlg-head"><h2 id="h-start">Start live</h2><span class="sub">Choose what runs during this show</span><button class="x" data-close aria-label="Close">×</button></div>
     <div class="dlg-body">
       <div class="start-fields">
-        <label class="fieldlabel">Microphone<select id="mic" class="select"><option value="builtin">Built-in microphone</option></select></label>
-        <label class="fieldlabel" title="How many people you will hear on the call. Voices beyond this count go to the closest one instead of becoming new speakers.">People on the call
+        <label class="fieldlabel source-field">Source
+          <select id="source" class="select">
+            <option value="call" selected>Microphone and call</option>
+            <option value="desk">Two channels</option>
+          </select>
+        </label>
+        <label class="fieldlabel" id="mic-field"><span id="mic-label">Microphone</span><select id="mic" class="select"><option value="builtin">Built-in microphone</option></select></label>
+        <label class="fieldlabel" id="voices-field" title="How many people you will hear on the call. Voices beyond this count go to the closest one instead of becoming new speakers.">People on the call
           <select id="voices" class="select voices">
             <option value="0" selected>Any number</option><option value="1">1 on the call</option><option value="2">2 on the call</option><option value="3">3 on the call</option><option value="4">4 on the call</option>
           </select>
         </label>
       </div>
+      <p id="desk-note" class="note" hidden>Channel 1 is the interviewer and channel 2 is the guest. One person on each. Speaker mode stays off.</p>
       <div class="feat always">
         <span class="feat-text"><b>Transcript</b><span>Both streams recorded and transcribed live, speakers identified, a timeline to find your way around it, and chat about it.</span></span>
         <span class="feat-on">Always on</span>

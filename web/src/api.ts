@@ -182,11 +182,13 @@ export const api = {
     call<{ rows: unknown[]; models: { s1: string | null; s2: string | null } }>("GET", `/api/calls?system=${system}&limit=${limit}`),
   engine: () => call<{ startedAt: string; stale: boolean }>("GET", "/api/engine"),
   stats: () => call<any>("GET", "/api/stats"),
-  devices: () => call<{ uid: string; name: string; transport: string; isDefault: boolean }[]>("GET", "/api/devices"),
+  devices: () => call<{ uid: string; name: string; transport: string; isDefault: boolean; channels?: number }[]>("GET", "/api/devices"),
   startReplay: (dir: string, speed: 1 | "max", voices?: number, features?: Features, labelling: Labelling = {}) =>
     call<{ sessionId: string }>("POST", "/api/session/start", { mode: "replay", dir, speed, voices, features, ...labelling }),
   startLive: (mic?: string, voices?: number, features?: Features, labelling: Labelling = {}) =>
     call<{ sessionId: string }>("POST", "/api/session/start", { mode: "live", ...(mic ? { mic } : {}), voices, features, ...labelling }),
+  startDesk: (desk: string, features?: Features, labelling: Labelling = {}) =>
+    call<{ sessionId: string }>("POST", "/api/session/start", { mode: "live", desk, features, ...labelling }),
   stop: () => call<{ sessionId: string }>("POST", "/api/session/stop"),
   rename: (id: string, displayName: string) => call("POST", `/api/speakers/${encodeURIComponent(id)}/rename`, { displayName }),
   suggestMerges: (voices?: number) => call<{ suggestions: MergeSuggestion[]; voices: { host: number; remote: number } }>(

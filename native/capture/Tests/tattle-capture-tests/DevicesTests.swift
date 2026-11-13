@@ -35,4 +35,17 @@ import Testing
         #expect(a.mElement == kAudioObjectPropertyElementMain)
         #expect(Devices.address(kAudioDevicePropertyDataSource, kAudioObjectPropertyScopeOutput).mScope == kAudioObjectPropertyScopeOutput)
     }
+
+    @Test func listingIncludesTheChannelCount() {
+        let d = Devices.Input(id: 1, uid: "bh", name: "BlackHole 2ch", transport: "virtual", isDefault: false, channels: 2)
+        let j = Devices.listing(d)
+        #expect(j["channels"] as? Int == 2)
+        #expect(j["uid"] as? String == "bh")
+    }
+
+    @Test func deskRefusalNamesADeviceThatHasFewerThanTwoChannels() {
+        #expect(Devices.deskRefusal(channels: 1, name: "MacBook Pro Microphone") == "desk capture needs 2 input channels, MacBook Pro Microphone has 1")
+        #expect(Devices.deskRefusal(channels: 2, name: "BlackHole 2ch") == nil)
+        #expect(Devices.deskRefusal(channels: 16, name: "BlackHole 16ch") == nil)
+    }
 }
