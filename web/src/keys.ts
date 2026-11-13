@@ -1,7 +1,8 @@
 // The setup screen (shown until the keys the transcription engine needs are set), the prompt for a key when a feature
-// needs it (TypeSafe for Jev, OpenAI for chat, label drafting, and transcription), and the API keys window. The server
+// needs it (TypeSafe for Jev, OpenAI for the Decisions provider, chat, label drafting, and transcription), the API keys
+// window, the Transcription window, and the Decisions window. The server
 // checks each key before saving it; it never sends a key back, only its last 4 characters (see docs/setup.md).
-import { api, type KeyName, type KeyStatus, type ModelChoiceView, type SaveKeysResult, type SetupStatus, type TranscriptionEngine, type TranscriptionStatus } from "./api.js";
+import { api, type DecisionProvider, type DecisionStatus, type KeyName, type KeyStatus, type ModelChoiceView, type SaveKeysResult, type SetupStatus, type TranscriptionEngine, type TranscriptionStatus } from "./api.js";
 import { $, h, replace, s } from "./dom.js";
 import { desktop } from "./desktop.js";
 
@@ -22,7 +23,7 @@ const GUIDES: Record<KeyName, Guide> = {
     title: "OpenAI",
     role: "Transcription, Chat, and label drafting",
     short: "Turns speech into text, and runs Chat and label drafting.",
-    what: "One key for transcription, the chat window, label drafting, and fact-check research. Jev, which labels the show and spots claims, uses TypeSafe instead.",
+    what: "One key for transcription, the chat window, label drafting, fact-check research, and — if you choose OpenAI in Settings → Decisions — the fast judgments that spot claims and label the show.",
     steps: [
       ["Sign in, or create an account, at ", link("https://platform.openai.com/signup", "platform.openai.com"), ". This is OpenAI's developer site, separate from a ChatGPT subscription."],
       ["Add credit: ", link("https://platform.openai.com/settings/organization/billing/overview", "Settings → Billing"), " → Add to credit balance. $10 is plenty to start. Leave automatic recharge off, so you are never charged more than you added."],
@@ -55,6 +56,34 @@ export async function setupStatus(): Promise<SetupStatus | null> {
 /** Whether a key is set, as last heard from the server (the prompts ask again before they show). */
 export function keySet(name: KeyName): boolean {
   return !!known?.keys.find((k) => k.name === name)?.set;
+}
+
+// ---------- System 1's provider, as the page knows it ----------
+
+let decisions: DecisionStatus | null = null;
+
+export function decisionState(): DecisionStatus | null {
+  return decisions;
+}
+
+export function setDecisionsState(d: DecisionStatus | null) {
+  decisions = d;
+}
+
+export async function refreshDecisions(): Promise<DecisionStatus | null> {
+  try { setDecisionsState(await api.decisions()); } catch { /* an older server has no provider setting */ }
+  return decisions;
+}
+
+/** The key System 1 needs: OpenAI's when its Decisions API answers, TypeSafe's otherwise. */
+export function systemOneKey(): KeyName {
+  return decisions?.provider === "openai" ? "openai" : "typesafe";
+}
+
+/** One line for the settings menu. */
+export function decisionSummary(d: DecisionStatus | null): string {
+  if (!d) return "";
+  return d.provider === "openai" ? "OpenAI Decisions" : "TypeSafe Jev";
 }
 
 // ---------- the transcription engine, as the page knows it ----------
@@ -485,4 +514,59 @@ export async function renderTranscription(onSaved: (message: string) => void) {
       option("openai", "OpenAI", "More accurate on names and jargon. About $1.23 an hour of show. Needs an OpenAI key.", null, null)),
     extra, msg,
     h("p", { class: "note" }, "The engine is chosen for the next session; a session keeps the one it started with."));
+}
+
+// ---------- the Decisions window ----------
+
+/**
+ * The Decisions window (cog menu): who answers System 1's typed questions — TypeSafe's Jev, or OpenAI's Decisions API.
+ * Choosing a provider without its key shows the key's card first. Read-only while a session is on air; the choice
+ * applies to the next session, like the transcription engine.
+ */
+export async function renderDecisions(onSaved: (message: string) => void) {
+  const box = $("#decisions");
+  if (!box) return;
+  const d = await refreshDecisions();
+  if (!d) { replace(box, h("p", { class: "empty" }, "This server has no provider setting: restart it with npm run serve.")); return; }
+  await setupStatus();
+  const msg = h("p", { class: "key-msg", "aria-live": "polite" });
+  const extra = h("div", {});
+  const choose = async (provider: DecisionProvider) => {
+    if (onAir || provider === d.provider) return;
+    replace(msg);
+    const key: KeyName = provider === "openai" ? "openai" : "typesafe";
+    const heading = key === "openai"
+      ? "Please provide your OpenAI API key to answer System 1 with OpenAI."
+      : "Please provide your TypeSafe API key to answer System 1 with TypeSafe.";
+    if (!keySet(key)) {
+      replace(extra, keyPrompt(key, heading, {
+        onSaved: () => void choose(provider),
+        onCancel: () => replace(extra),
+      }));
+      return;
+    }
+    try {
+      setDecisionsState(await api.setDecisions(provider));
+      onSaved(provider === "openai" ? "System 1: OpenAI Decisions" : "System 1: TypeSafe Jev");
+      void renderDecisions(onSaved);
+    } catch (e) {
+      msg.className = "key-msg bad";
+      msg.textContent = e instanceof Error ? e.message : String(e);
+    }
+  };
+  const option = (provider: DecisionProvider, title: string, text: string) =>
+    h("div", { class: "decision-opt" },
+      h("button", {
+        class: "feat decision-choice", role: "radio", type: "button", "aria-checked": String(d.provider === provider),
+        disabled: onAir, onclick: () => void choose(provider),
+      },
+      h("span", { class: "feat-text" }, h("b", {}, title), h("span", {}, text)),
+      h("span", { class: "radio", "aria-hidden": "true" }, h("i"))));
+  replace(box,
+    onAir ? h("p", { class: "note engine-onair" }, "A session is on air: the provider can be changed when it ends.") : null,
+    h("div", { class: "decision-list", role: "radiogroup", "aria-label": "System 1 provider" },
+      option("typesafe", "TypeSafe Jev", "The calibrated default: about $0.04 an hour of show. Needs a TypeSafe key."),
+      option("openai", "OpenAI Decisions", "gpt-6-luna, about 10× faster on small judgments. 10¢ per million input tokens. Needs an OpenAI key.")),
+    extra, msg,
+    h("p", { class: "note" }, "System 1 answers the fast questions: is this a claim, which kind, does the line move on, which label fits. The choice is for the next session; a session keeps the one it started with."));
 }

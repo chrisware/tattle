@@ -1,8 +1,10 @@
 ---
-description: What Jev is, how its Decisions API works (question types, answers, confidence, limits, price), and every place this project asks it a question — per utterance, per segment, in the replay gate — with the client's retry and budget rules.
+description: What Jev is, how its Decisions API works (question types, answers, confidence, limits, price), how to switch System 1 to OpenAI's Decisions API, and every place this project asks a question — per utterance, per segment, in the replay gate — with the client's retry and budget rules.
 tags: [jev, typesafe, openrouter, decisions-api, system-1, llm]
 source:
   - src/jev/client.ts
+  - src/jev/decisions.ts
+  - src/settings.ts
   - src/jev/types.ts
   - src/pipeline/segmenter.ts
   - src/pipeline/timeline.ts
@@ -98,6 +100,38 @@ Answers:
 
 Calibration reported by OpenRouter (Banking77): 96.3% accuracy on the 58% of inputs where confidence ≥ 0.99, and 85% of errors had confidence below 0.90.
 
+## Choosing the provider
+
+System 1's questions can be answered by OpenAI's Decisions API instead of Jev. The choice is a user setting, not config:
+`~/Library/Application Support/Tattle/settings.json` holds `{ "decisionProvider": "typesafe" | "openai" }`
+(`TATTLE_SETTINGS` overrides the path). Until the user chooses, `decisions.provider` in `config/app.json` answers — it is
+`typesafe`, so an existing install keeps Jev.
+
+**Settings → Decisions** (cog menu) offers both, with the price of each. The choice applies to the next session; a
+session keeps the one it started with. A provider whose key is missing is asked for its key first, inside that window.
+
+| Route | Body / answer |
+| --- | --- |
+| `GET /api/decisions` | `{ provider, saved, typesafe: { keySet }, openai: { keySet } }` |
+| `PUT /api/decisions` | `{ provider }`. 409 while a session is on air; 400 without the chosen provider's key (`needsKey`) |
+
+The mapping lives in `src/jev/decisions.ts`; the client, its retry rules, the shared pause, the concurrency limit and the
+budget are the same for both providers.
+
+- **Request.** `POST /v1/decisions` (base from `decisions.openai.baseUrl`, or `OPENAI_BASE_URL`), model `gpt-6-luna`.
+  The state goes as an `input_json` part behind a fixed developer message (`FRAMING`): it tells the model that each
+  question is about a property of `new_utterance`, not about whether the utterance is true. Without that framing
+  gpt-6-luna scores a false or unverifiable claim near 0 and the `claim` question inverts.
+- **Questions.** The question id becomes the Decisions `name`. A `noul` becomes a `predicate`; its `criteria.true` /
+  `criteria.false` wording is appended to the instructions, because a predicate has no criteria field. A `choice`
+  becomes `choices: [{ value, description }]`. A `score` becomes `levels: [{ label }]`.
+- **Answers.** Back into the id-keyed map: a predicate is `{ type: "noul", noul: probability }`, a choice keeps
+  `confidence` and its per-value probabilities, a score keeps `score`, `confidence`, probabilities by level label and a
+  `legend` of index → label. A refusal drops that one answer; every other question still answers.
+- **Price.** `$0.10` per million input tokens and `$0.50` per million output tokens (`decisions.openai` in
+  `config/app.json`), computed from the response's token counts; cached input is not separated. An exhausted credit is
+  a 429 with `insufficient_quota`, which is treated like a 402: the budget is exhausted and the call is not retried.
+
 ## Where this project asks Jev
 
 | Purpose | When | State | Questions | Settings |
@@ -192,6 +226,7 @@ Every call writes one row to `jev_calls.jsonl`: `purpose`, `utterance_id` / `seg
 | Smoke check 4: 50 sequential worst-case per-utterance requests (48 questions), 3 s live timeout, one attempt each | p50 349–367 ms, p95 479–518 ms, 0 timeouts |
 | The 78 s fixture at speed 1 | 13 calls, all first-attempt; p50 699 ms, max 944 ms; $0.0006 total |
 | One per-utterance request with 5 questions (smoke check 2) | $0.000036 |
+| Smoke check 7, 3 per-utterance requests each, 14 November 2026 | Jev p50 195 ms; OpenAI Decisions p50 170 ms; `claim` 0.84/0.06/0.97 vs 0.93/0.05/0.72 |
 | One segment request with 11 questions (smoke check 3) | $0.00006 |
 
 Design estimate for a one-hour show: about 900 per-utterance and 80 per-segment requests. At the fixture's measured rate that is about $0.04 of Jev; the original design estimate, which assumed larger requests, was $0.15. Each memory question adds input tokens to every later per-utterance request, so a claim-heavy show costs more.

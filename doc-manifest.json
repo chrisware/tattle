@@ -308,7 +308,7 @@
     },
     {
       "dangling": false,
-      "description": "What Jev is, how its Decisions API works (question types, answers, confidence, limits, price), and every place this project asks it a question — per utterance, per segment, in the replay gate — with the client's retry and budget rules.",
+      "description": "What Jev is, how its Decisions API works (question types, answers, confidence, limits, price), how to switch System 1 to OpenAI's Decisions API instead, and every place this project asks a question — per utterance, per segment, in the replay gate — with the client's retry and budget rules.",
       "has_frontmatter": true,
       "headings": [
         "Jev",
@@ -317,13 +317,14 @@
         "A real exchange from this project",
         "How to read the answers",
         "Limits and price",
+        "Choosing the provider",
         "Where this project asks Jev",
         "The boundary question (per utterance)",
         "The timeline questions (per segment): label sets",
         "The client — `src/jev/client.ts`",
         "Measured performance and cost"
       ],
-      "line_count": 199,
+      "line_count": 232,
       "links_to": [
         "docs/architecture.md",
         "docs/gotchas.md",
@@ -337,6 +338,7 @@
       "source": [
         "src/jev/client.ts",
         "src/jev/types.ts",
+        "src/jev/decisions.ts",
         "src/pipeline/segmenter.ts",
         "src/pipeline/timeline.ts",
         "src/factcheck/gate.ts",
@@ -347,7 +349,8 @@
         "src/labels/try.ts",
         "src/labels/assist.ts",
         "src/labels/interview.ts",
-        "config/factcheck.s1.default.json"
+        "config/factcheck.s1.default.json",
+        "src/settings.ts"
       ],
       "source_unresolved": [],
       "tags": [
@@ -356,7 +359,8 @@
         "openrouter",
         "decisions-api",
         "system-1",
-        "llm"
+        "llm",
+        "openai"
       ],
       "toc": {
         "linked": false,

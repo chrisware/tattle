@@ -3,7 +3,7 @@
 import { api, ApiError, type AssistTurn, type LabelSetCheck, type LabelSetEntry, type LabelSetList, type LabelTry, type SessionSummary } from "./api.js";
 import { $, clock, h, icon, replace } from "./dom.js";
 import { ICONS } from "./icons.js";
-import { keyPrompt, keySet, setupStatus } from "./keys.js";
+import { keyPrompt, keySet, setupStatus, systemOneKey } from "./keys.js";
 import { ask, toast } from "./panels.js";
 import { renderPreview } from "./timeline.js";
 import type { Labels, LabelSet } from "./state.js";
@@ -542,10 +542,13 @@ async function openTry(host: EditorHost & { lastCheck(): LabelSetCheck | null; c
   const keyBox = h("div", { hidden: true });
   const result = h("div", { class: "ltry-result" });
   const tryIt = async () => {
-    if (!keySet("typesafe")) {
-      // the key is asked for here, inside this window: Try calls Jev, through TypeSafe
+    const systemOne = systemOneKey();
+    if (!keySet(systemOne)) {
+      // the key is asked for here, inside this window: Try asks System 1, through TypeSafe or OpenAI
       keyBox.hidden = false;
-      replace(keyBox, keyPrompt("typesafe", "Please provide your TypeSafe API key to try a label set on a recording.", {
+      replace(keyBox, keyPrompt(systemOne, systemOne === "openai"
+        ? "Please provide your OpenAI API key to try a label set on a recording."
+        : "Please provide your TypeSafe API key to try a label set on a recording.", {
         onSaved: () => { keyBox.hidden = true; replace(keyBox); void tryIt(); },
         onCancel: () => { keyBox.hidden = true; replace(keyBox); },
       }));
@@ -559,7 +562,7 @@ async function openTry(host: EditorHost & { lastCheck(): LabelSetCheck | null; c
       const r = await api.tryLabelSet(draft, id, 10);
       showTry(result, draft, r, rec);
     } catch (e) {
-      if (e instanceof ApiError && e.body?.needsKey === "typesafe") { await setupStatus(); go.disabled = false; return void tryIt(); }
+      if (e instanceof ApiError && (e.body?.needsKey === "typesafe" || e.body?.needsKey === "openai")) { await setupStatus(); go.disabled = false; return void tryIt(); }
       replace(result, h("p", { class: "error-text" }, e instanceof Error ? e.message : String(e)));
     } finally {
       go.disabled = false;

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { request } from "node:http";
 import { connect } from "node:net";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
-import { ApiError, createApiServer, Engine, type ChatApi, type EngineApi, type LabelSetApi, type TranscriptionApi, type TransferApi } from "../src/server/main.ts";
+import { ApiError, createApiServer, Engine, type ChatApi, type DecisionApi, type EngineApi, type LabelSetApi, type TranscriptionApi, type TransferApi } from "../src/server/main.ts";
 import { ChatError, type ChatEvent } from "../src/chat/chat.ts";
 import { KeyError, KeySetup, KeyStore } from "../src/keys.ts";
 import { LabelSetError } from "../src/labels/store.ts";
@@ -64,6 +64,7 @@ describe("an engine without the optional parts", () => {
   });
 
   test("the transcription and label-set routes answer 501 without their parts", async () => {
+    expect((await http(base, "GET", "/api/decisions")).json).toEqual({ error: "the System 1 provider setting is not available" });
     expect((await http(base, "GET", "/api/transcription")).status).toBe(501);
     expect((await http(base, "POST", "/api/transcription/install")).json).toEqual({ error: "the transcription setting is not available" });
     expect((await http(base, "GET", "/api/label-sets")).json).toEqual({ error: "label sets are not available" });
@@ -429,7 +430,12 @@ describe("the transcription and label-set routes, through fakes", () => {
   const labelSetApi = new Proxy({}, {
     get: (_t, name: string) => (...args: unknown[]) => { calls.push([name, ...args]); if (name === "exportFile") return { fileName: "Ventes « été ».tattle-labels", body: "{}\n" }; return { called: name }; },
   }) as LabelSetApi;
-  const engine = Object.assign(new FakeEngine(), { transcription, labelSetApi });
+  const decided = { provider: "typesafe", saved: null, typesafe: { keySet: true }, openai: { keySet: true } };
+  const decisions: DecisionApi = {
+    status: () => decided as never,
+    set: (p) => { calls.push(["decisions-set", p]); return { ...decided, provider: p } as never; },
+  };
+  const engine = Object.assign(new FakeEngine(), { transcription, labelSetApi, decisions });
   let ready!: () => void;
   const server = createApiServer(engine as EngineApi, { webRoot: webRoot(), ready: new Promise<void>((r) => (ready = r)) });
   let base = "";
@@ -453,6 +459,14 @@ describe("the transcription and label-set routes, through fakes", () => {
     expect(calls.slice(-2)).toEqual([["set", "apple"], ["install"]]);
     expect((await http(base, "DELETE", "/api/transcription")).status).toBe(404);
     expect((await http(base, "GET", "/api/transcription/install")).status).toBe(404);
+  });
+
+  test("decisions: the provider is read and changed; other methods are not routes", async () => {
+    expect((await http(base, "GET", "/api/decisions")).json).toEqual(decided);
+    const r = await http(base, "PUT", "/api/decisions", { body: { provider: "openai" } });
+    expect([r.status, (r.json as { provider: string }).provider]).toEqual([200, "openai"]);
+    expect(calls).toContainEqual(["decisions-set", "openai"]);
+    expect((await http(base, "DELETE", "/api/decisions")).status).toBe(404);
   });
 
   test("label sets: each route calls its method with the decoded id and the body", async () => {

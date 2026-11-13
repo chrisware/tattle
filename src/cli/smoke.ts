@@ -25,6 +25,11 @@ const openai = process.env.OPENAI_API_KEY ?? "";
 const store = new SessionStore({ prefix: "smoke-", redact: processSecrets() });
 const budget = new Budget();
 const jev = new JevClient(cfg.app.jev, { fetch, apiKey: typesafe, budget, log: (r) => store.append("jev_calls", r) });
+/** The same questions, on OpenAI's Decisions API: check 7 compares the two answers and their latency. */
+const openaiJev = new JevClient(cfg.app.jev, {
+  fetch, apiKey: typesafe, openaiKey: openai, provider: "openai", decisions: cfg.app.decisions.openai,
+  budget, log: (r) => store.append("jev_calls", r),
+});
 const s2 = new S2Client(cfg.app.s2, { fetch, apiKey: openai, budget, log: (r) => store.append("s2_calls", r) });
 const transcriber = new Transcriber(cfg.app.transcription, { fetch, apiKey: openai, budget, log: (r) => store.append("transcriptions", r) });
 
@@ -163,6 +168,30 @@ await check(6, "audit and rewrite calls with canned inputs", async () => {
   }, null, 1);
   const r = await s2.rewrite(input);
   return `audit ${a.items.length} items (${a.items.filter((i) => i.has_checkable_claim).length} checkable); rewrite ${r.changes.length} changes (${r.changes.map((c) => `${c.op}:${c.target}`).join(", ")})`;
+});
+
+await check(7, "OpenAI Decisions API answers the per-utterance questions; latency against Jev", async () => {
+  if (!openai) throw new Error("OPENAI_API_KEY is not set");
+  const q = s1Questions();
+  const runs = 3;
+  const sample = async (client: JevClient) => {
+    const lat: number[] = [];
+    const answers: any[] = [];
+    for (let i = 0; i < runs; i++) {
+      const t0 = Date.now();
+      const res = await client.ask(state(1 + i), q, { purpose: "smoke", live: true, maxAttempts: 1, timeoutMs: cfg.app.jev.utteranceTimeoutMs });
+      lat.push(Date.now() - t0);
+      const bad = Object.entries(q).filter(([id, qq]) => !typedLike(qq, res.answers[id])).map(([id]) => id);
+      if (bad.length) throw new Error(`${client === openaiJev ? "OpenAI" : "Jev"}: untyped or missing answers: ${bad.join(", ")}`);
+      answers.push(res);
+    }
+    return { lat, answers };
+  };
+  const a = await sample(jev);
+  const b = await sample(openaiJev);
+  const claim = (runs2: any[]) => runs2.map((r) => Number(r.answers.claim?.noul ?? NaN).toFixed(2)).join("/");
+  const p50 = (xs: number[]) => pct(xs, 50);
+  return `Jev p50 ${p50(a.lat)} ms (claim ${claim(a.answers)}), OpenAI p50 ${p50(b.lat)} ms (claim ${claim(b.answers)}), ${runs} runs each, model ${b.answers[0].model}`;
 });
 
 store.close();

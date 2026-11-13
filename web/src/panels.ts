@@ -1,6 +1,6 @@
 import { api, ApiError, type Features, type Labelling, type LabelSetEntry, type MergeSuggestion, type SessionSummary } from "./api.js";
 import { openExport, openImport } from "./transfer.js";
-import { keyPrompt, keySet, onTranscription, refreshTranscription, setTranscription, setupStatus, transcriptionState, transcriptionSummary } from "./keys.js";
+import { decisionState, decisionSummary, keyPrompt, keySet, onTranscription, refreshDecisions, refreshTranscription, setTranscription, setupStatus, systemOneKey, transcriptionState, transcriptionSummary } from "./keys.js";
 import { desktop } from "./desktop.js";
 import { setRoute } from "./router.js";
 import { $, clock, glyph, h, icon, pluralOf, pretty, replace, usd } from "./dom.js";
@@ -201,7 +201,8 @@ const factcheckOn = () => factcheckSwitch().getAttribute("aria-checked") === "tr
 const labelPick = () => $<HTMLSelectElement>("#start-labelset");
 const labelsOn = () => (labelPick()?.value ?? "off") !== "off";
 const TYPESAFE_HEADING = "Please provide your TypeSafe API key to configure fact-checking or labeling.";
-const OPENAI_HEADING = "Please provide your OpenAI API key. Fact-checking research uses it. Jev uses TypeSafe.";
+const OPENAI_SYSTEM_ONE_HEADING = "Please provide your OpenAI API key to configure fact-checking or labeling.";
+const OPENAI_HEADING = "Please provide your OpenAI API key. Fact-checking research uses it.";
 /** The label set picked last time, remembered in the browser like the microphone. */
 const LABELS_KEY = "pa.labelSet";
 const DEFAULT_SET = "ai-podcast";
@@ -229,7 +230,8 @@ function rememberedSet(sets: LabelSetEntry[]): string {
  * with it, fact-checking and the label set picked last time.
  */
 export async function replayChoices(): Promise<{ features: Features; labelling: Labelling }> {
-  if (!keySet("typesafe")) return { features: { factcheck: false, labels: false }, labelling: { labelSet: null } };
+  await refreshDecisions();
+  if (!keySet(systemOneKey())) return { features: { factcheck: false, labels: false }, labelling: { labelSet: null } };
   const sets = (await api.labelSets().catch(() => null))?.sets ?? [];
   return { features: { factcheck: true, labels: true }, labelling: sets.length ? { labelSet: rememberedSet(sets) } : {} };
 }
@@ -265,12 +267,13 @@ function renderStartSummary() {
   replace($("#start-summary"), h("b", {}, what), h("br", {}), apple ? "Transcript: free, on this Mac. " : "", cost);
 }
 
-/** Asks for the TypeSafe key inside the Start live window; Not now turns off everything that needs it. */
-function askTypesafe(then?: () => void) {
+/** Asks for the key System 1 needs (TypeSafe's, or OpenAI's when the Decisions API answers); Not now turns it all off. */
+function askSystemOne(then?: () => void) {
+  const key = systemOneKey();
   const box = $("#start-key");
   if (!box) return;
   box.hidden = false;
-  replace(box, keyPrompt("typesafe", TYPESAFE_HEADING, {
+  replace(box, keyPrompt(key, key === "openai" ? OPENAI_SYSTEM_ONE_HEADING : TYPESAFE_HEADING, {
     onSaved: () => { box.hidden = true; replace(box); renderStartSummary(); then?.(); },
     onCancel: () => {
       factcheckSwitch().setAttribute("aria-checked", "false");
@@ -346,17 +349,17 @@ function bindStartLive() {
     const on = !factcheckOn();
     factcheckSwitch().setAttribute("aria-checked", String(on));
     renderStartSummary();
-    if (on && !keySet("typesafe")) askTypesafe();
+    if (on && !keySet(systemOneKey())) askSystemOne();
   });
   labelPick()?.addEventListener("change", () => {
     renderStartSummary();
     // a set picked by the host asks for the key when it is missing
-    if (!settingPick && labelsOn() && !keySet("typesafe") && $("#start-key")?.hidden) askTypesafe();
+    if (!settingPick && labelsOn() && !keySet(systemOneKey()) && $("#start-key")?.hidden) askSystemOne();
   });
   const start = () => {
     const lb = labelsOn();
     const features = { factcheck: factcheckOn(), labels: lb };
-    if ((features.factcheck || lb) && !keySet("typesafe")) return askTypesafe(start);
+    if ((features.factcheck || lb) && !keySet(systemOneKey())) return askSystemOne(start);
     if (preparing()) return;
     const desk = $<HTMLSelectElement>("#source")?.value === "desk";
     const mic = $<HTMLSelectElement>("#mic")?.value;
@@ -375,7 +378,7 @@ function bindStartLive() {
         $<HTMLDialogElement>("#dlg-start")!.close();
       } catch (e) {
         // the server knows best which key is missing (one removed from .env, say): ask for it here
-        if (e instanceof ApiError && e.body?.needsKey === "typesafe") { await setupStatus(); return askTypesafe(start); }
+        if (e instanceof ApiError && e.body?.needsKey === "typesafe") { await setupStatus(); return askSystemOne(start); }
         if (e instanceof ApiError && e.body?.needsKey === "openai") { await setupStatus(); return askOpenAI(start); }
         if (e instanceof ApiError && e.body?.preparing) { void refreshTranscription(); return; }
         $<HTMLDialogElement>("#dlg-start")!.close();
@@ -533,6 +536,7 @@ export function renderMenu(st: State) {
   const none = "Start or open a recording";
   replace($("#m-speakers"), st.session ? plural(voices, "voice") : none);
   replace($("#m-transcription"), transcriptionSummary(transcriptionState()));
+  replace($("#m-decisions"), decisionSummary(decisionState()));
 }
 
 // ---------- Insights: Overview (stats), Fact-checker (System 1), Log ----------

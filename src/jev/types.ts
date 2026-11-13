@@ -58,6 +58,9 @@ export const JevAnswerSchema = z.union([
   }).passthrough(),
 ]);
 
+/** Which service answers System 1's typed questions: TypeSafe's Jev, or OpenAI's Decisions API. */
+export type DecisionProvider = "typesafe" | "openai";
+
 export interface JevUsage { input_tokens: number; output_tokens: number; cost: number }
 
 export interface JevResponse {

@@ -2,7 +2,7 @@
 // The API keys and the transcription engine (web/src/keys.ts): the first-run screen, a key asked for where it is
 // needed, the API keys window, and the Transcription window. See docs/setup.md.
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import type { KeyStatus, SaveKeysResult, SetupStatus, TranscriptionStatus } from "../../web/src/api.ts";
+import type { DecisionStatus, KeyStatus, SaveKeysResult, SetupStatus, TranscriptionStatus } from "../../web/src/api.ts";
 import { flush } from "./helpers.ts";
 import { all, button, freshPage, key, later, resetApi, stubReload, text, type, type FakeApi } from "./helpers-core.ts";
 
@@ -29,6 +29,10 @@ const saved = (o: Partial<SaveKeysResult> = {}): SaveKeysResult => ({
 const trans = (o: Partial<TranscriptionStatus> = {}, apple: Partial<TranscriptionStatus["apple"]> = {}): TranscriptionStatus => ({
   engine: "apple", saved: null, openai: { keySet: false }, ...o,
   apple: { available: true, reason: null, model: "installed", fraction: null, error: null, ...apple },
+});
+
+const dec = (o: Partial<DecisionStatus> = {}): DecisionStatus => ({
+  provider: "typesafe", saved: null, typesafe: { keySet: true }, openai: { keySet: true }, ...o,
 });
 
 beforeEach(async () => { await resetApi(fake); });
@@ -670,5 +674,93 @@ describe("the Transcription window", () => {
     await flush();
     expect(fake.transcription!.mock.calls.length).toBe(calls + 1);
     expect(all("#transcription .engine-onair")).toHaveLength(0);
+  });
+});
+
+describe("the Decisions window", () => {
+  const radios = () => all("#decisions .decision-choice") as HTMLButtonElement[];
+
+  test("without #decisions nothing happens; a server with no provider setting says so", async () => {
+    const k = await load();
+    const box = document.getElementById("decisions")!;
+    box.remove();
+    await k.renderDecisions(vi.fn());
+    expect(fake.decisions).not.toHaveBeenCalled();
+    document.body.append(box);
+    fake.decisions!.mockRejectedValue(new Error("404"));
+    await k.renderDecisions(vi.fn());
+    expect(text("#decisions")).toBe("This server has no provider setting: restart it with npm run serve.");
+  });
+
+  test("shows both providers, the chosen one checked, and a menu summary naming it", async () => {
+    const k = await load();
+    fake.decisions!.mockResolvedValue(dec());
+    await k.renderDecisions(vi.fn());
+    expect(radios().map((r) => [r.getAttribute("aria-checked"), r.disabled])).toEqual([["true", false], ["false", false]]);
+    expect(text("#decisions > .note:last-child")).toContain("a session keeps the one it started with");
+    expect(k.decisionSummary?.(null)).toBe("");
+    expect(k.decisionSummary(dec())).toBe("TypeSafe Jev");
+    expect(k.decisionSummary(dec({ provider: "openai" }))).toBe("OpenAI Decisions");
+  });
+
+  test("choosing the other provider saves it, says so, and redraws; choosing the current one does nothing", async () => {
+    const k = await load();
+    const onSaved = vi.fn();
+    fake.decisions!.mockResolvedValueOnce(dec()).mockResolvedValue(dec({ provider: "openai", saved: "openai" }));
+    fake.setup!.mockResolvedValue(status({ configured: true, keys: [keyStatus("typesafe", { set: true }), keyStatus("openai", { set: true })] }));
+    fake.setDecisions!.mockResolvedValue(dec({ provider: "openai", saved: "openai" }));
+    await k.renderDecisions(onSaved);
+    radios()[0]!.click();
+    await flush();
+    expect(fake.setDecisions).not.toHaveBeenCalled();
+    radios()[1]!.click();
+    await flush();
+    expect(fake.setDecisions).toHaveBeenCalledWith("openai");
+    expect(onSaved).toHaveBeenCalledWith("System 1: OpenAI Decisions");
+    expect(k.decisionState()?.provider).toBe("openai");
+  });
+
+  test("a provider whose key is not set asks for it first: Not now clears, a saved key chooses it", async () => {
+    const k = await load();
+    const onSaved = vi.fn();
+    fake.decisions!.mockResolvedValue(dec({ provider: "openai", typesafe: { keySet: false }, openai: { keySet: true } }));
+    fake.setup!.mockResolvedValue(status({ configured: true, keys: [keyStatus("typesafe"), keyStatus("openai", { set: true })] }));
+    await k.renderDecisions(onSaved);
+    radios()[0]!.click();
+    await flush();
+    expect(fake.setDecisions).not.toHaveBeenCalled();
+    expect(text("#decisions .key-prompt, #decisions .keycard, #decisions form")).toContain("TypeSafe API key");
+    button("Not now")!.click();
+    await flush();
+    expect(all("#decisions .key-msg").length).toBeGreaterThan(0);
+    expect(fake.setDecisions).not.toHaveBeenCalled();
+  });
+
+  test("saving the missing key from the window continues the choice", async () => {
+    const k = await load();
+    const onSaved = vi.fn();
+    fake.decisions!.mockResolvedValueOnce(dec({ provider: "openai", typesafe: { keySet: false } })).mockResolvedValue(dec({ provider: "typesafe", saved: "typesafe" }));
+    fake.setup!.mockResolvedValue(status({ configured: true, keys: [keyStatus("typesafe"), keyStatus("openai", { set: true })] }));
+    fake.saveKeys!.mockResolvedValue(saved({ checks: { typesafe: { ok: true, message: "Key works" } } }));
+    fake.setDecisions!.mockResolvedValue(dec({ provider: "typesafe", saved: "typesafe" }));
+    await k.renderDecisions(onSaved);
+    radios()[0]!.click();
+    await flush();
+    type(document.querySelector("#decisions input")!, TYPESAFE);
+    button("Save", document.querySelector("#decisions")!)!.click();
+    await flush();
+    expect(fake.setDecisions).toHaveBeenCalledWith("typesafe");
+    expect(onSaved).toHaveBeenCalledWith("System 1: TypeSafe Jev");
+  });
+
+  test("a refused change shows the server's message", async () => {
+    const k = await load();
+    fake.decisions!.mockResolvedValue(dec());
+    fake.setup!.mockResolvedValue(status({ configured: true, keys: [keyStatus("typesafe", { set: true }), keyStatus("openai", { set: true })] }));
+    fake.setDecisions!.mockRejectedValue(new Error("the System 1 provider can be changed when no session is on air"));
+    await k.renderDecisions(vi.fn());
+    radios()[1]!.click();
+    await flush();
+    expect(text("#decisions .key-msg.bad")).toContain("no session is on air");
   });
 });

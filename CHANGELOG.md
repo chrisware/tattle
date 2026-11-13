@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- System 1 can ask OpenAI's Decisions API instead of TypeSafe's Jev. **Settings → Decisions** chooses, for the next session; the provider whose key is missing is asked for it there. Same questions, same answers, same budget; the Decisions endpoint is about as fast in the smoke check's measurement.
 - Start live can use a two-channel input: channel 1 is the interviewer and channel 2 is the guest. The microphone and the system tap stay off.
 
 ### Changed

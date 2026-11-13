@@ -58,6 +58,19 @@ export const AppConfigSchema = z.object({
     model: z.string().min(1), utteranceTimeoutMs: int, segmentTimeoutMs: int, maxAttempts: int,
     backgroundTimeoutMs: int, backgroundMaxAttempts: int, concurrency: int, segmentConcurrency: int,
   }).strict(),
+  /**
+   * Which service answers System 1's typed questions (docs/jev.md § Choosing the provider). `provider` is the default
+   * the user's saved choice overrides; the OpenAI block prices the Decisions API and names its model.
+   */
+  decisions: z.object({
+    provider: z.enum(["typesafe", "openai"]),
+    openai: z.object({
+      model: z.string().min(1),
+      inputUsdPerMToken: nonNegative,
+      outputUsdPerMToken: nonNegative,
+      baseUrl: z.string().min(1).optional(),
+    }).strict(),
+  }).strict(),
   segmentation: z.object({
     boundaryThreshold: probability, speakerChangeGapMs: nonNegative, speakerChangeBonus: probability,
     minSegmentMs: nonNegative, maxSegmentMs: positive, reorderTimeoutMs: int,
