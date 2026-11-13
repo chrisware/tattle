@@ -318,13 +318,14 @@
         "How to read the answers",
         "Limits and price",
         "Choosing the provider",
+        "Comparing the two on one recording",
         "Where this project asks Jev",
         "The boundary question (per utterance)",
         "The timeline questions (per segment): label sets",
         "The client — `src/jev/client.ts`",
         "Measured performance and cost"
       ],
-      "line_count": 232,
+      "line_count": 263,
       "links_to": [
         "docs/architecture.md",
         "docs/gotchas.md",

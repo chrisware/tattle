@@ -132,6 +132,35 @@ budget are the same for both providers.
   `config/app.json`), computed from the response's token counts; cached input is not separated. An exhausted credit is
   a 429 with `insufficient_quota`, which is treated like a 402: the budget is exhausted and the call is not retried.
 
+### Comparing the two on one recording
+
+`npm run replay` takes `--provider typesafe|openai` (else the saved choice, else the config default) and prints which
+provider answered. Replaying `fixtures/conversation` (78 s, `--engine apple --speed max`, fact-checking and labels on)
+with each provider on 14 November 2026 produced the same headline: 10 utterances, 3 segments, 2 claims flagged, the
+same verdicts.
+
+| Line | boundary Jev / OpenAI | claim Jev / OpenAI | hedged Jev / OpenAI | claim_type |
+| --- | --- | --- | --- | --- |
+| "Welcome back to the show…" | 0.90 / 1.00 | 0.68 / 0.98 | 0.02 / 0.00 | none / none |
+| "Honestly, Jev is 445 times cheaper than GPT." | 0.14 / 0.00 | 0.92 / 1.00 | 0.03 / 0.05 | number / number |
+| "I don't buy that at all…" | 0.04 / 0.00 | 0.06 / 0.03 | 0.70 / 0.91 | none / none |
+| "OpenRouter listed Jev on September 18th." | 0.48 / 0.00 | 0.96 / 0.61 | **0.03 / 0.64** | date / date |
+| "Jev is a 1,000,000 times better…" | 0.10 / 0.00 | 0.36 / 0.06 | 0.02 / 0.06 | capability / capability |
+| "Okay, enough about models…" | 0.98 / 1.00 | 0.06 / 0.01 | 0.03 / 0.03 | **event / none** |
+| "It was absolutely beautiful…" | 0.03 / 0.00 | 0.29 / 0.33 | 0.02 / 0.01 | event / event |
+| "Then later we drove up the coast…" | 0.08 / 0.00 | 0.26 / 0.03 | 0.02 / 0.09 | event / event |
+| "According to the Launch Post…" | 0.94 / 1.00 | 0.86 / 0.96 | 0.03 / 0.00 | capability / capability |
+| "Jev is 445 times cheaper than GPT." | 0.75 / 0.94 | 0.88 / 0.71 | 0.02 / 0.00 | number / number |
+
+Agreement at the configured thresholds: boundary 10/10, claim 10/10, hedged 9/10, claim_type 9/10. The two crossings
+are one line each ("OpenRouter listed Jev…" hedged, which changes a `worth` penalty at most, and "Okay, enough about
+models…", whose claim answers are 0.06 and 0.01, so neither flags it). Probabilities are not interchangeable even when
+the verdicts are: gpt-6-luna is more decisive above the threshold and closer to 0 well below it.
+
+Cost on the same 10 lines: Jev $0.00048, OpenAI Decisions $0.00163 (about 3.4×: 2.4× per input token, plus the
+framing line's tokens — 16,271 vs 11,376). Median latency in that replay: 244 ms vs 255 ms. One 78-second fixture is
+evidence that the thresholds transfer, not a calibration: a real show varies more.
+
 ## Where this project asks Jev
 
 | Purpose | When | State | Questions | Settings |

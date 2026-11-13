@@ -1,5 +1,5 @@
-// npm run replay -- --host <wav> --remote <wav> --speed max|1 [--engine apple|openai] [--no-factcheck] [--no-labels]
-//                    [--export <file>]
+// npm run replay -- --host <wav> --remote <wav> --speed max|1 [--engine apple|openai] [--provider typesafe|openai]
+//                    [--no-factcheck] [--no-labels] [--export <file>]
 import { parseArgs } from "node:util";
 import { loadConfig } from "../config.ts";
 import { FileSource, type AudioSource } from "../audio/source.ts";
@@ -9,6 +9,7 @@ import { loadKeys } from "../keys.ts";
 import { resolveEngine, SettingsStore } from "../settings.ts";
 import { appleSpeechStatus, installAppleModel } from "../transcribe/apple.ts";
 import type { TranscriptionEngine } from "../pipeline/session.ts";
+import type { DecisionProvider } from "../jev/types.ts";
 import { isMain } from "../entry.ts";
 
 /**
@@ -28,15 +29,20 @@ export async function run(
     options: {
       host: { type: "string" }, remote: { type: "string" }, speed: { type: "string", default: "max" },
       export: { type: "string" }, quiet: { type: "boolean", default: false },
-      engine: { type: "string" }, factcheck: { type: "boolean", default: true }, labels: { type: "boolean", default: true },
+      engine: { type: "string" }, provider: { type: "string" },
+      factcheck: { type: "boolean", default: true }, labels: { type: "boolean", default: true },
     },
   });
   if (!values.host && !values.remote) {
-    console.error("usage: npm run replay -- --host <host.wav> --remote <remote.wav> --speed max|1 [--engine apple|openai] [--no-factcheck] [--no-labels] [--export <file>]");
+    console.error("usage: npm run replay -- --host <host.wav> --remote <remote.wav> --speed max|1 [--engine apple|openai] [--provider typesafe|openai] [--no-factcheck] [--no-labels] [--export <file>]");
     return exit(1);
   }
   if (values.engine !== undefined && values.engine !== "apple" && values.engine !== "openai") {
     console.error("--engine must be apple or openai");
+    return exit(1);
+  }
+  if (values.provider !== undefined && values.provider !== "typesafe" && values.provider !== "openai") {
+    console.error("--provider must be typesafe or openai");
     return exit(1);
   }
   const keys = loadKeys();
@@ -83,11 +89,23 @@ export async function run(
     });
   }
 
+  // System 1's provider: --provider, else the one saved from Settings, else the config default
+  const decisionProvider = (values.provider as DecisionProvider | undefined) ?? new SettingsStore().read().decisionProvider ?? cfg.app.decisions.provider;
+  // tests inject the services' fetch, so they need no key; a transcript-only replay asks System 1 nothing
+  const asksSystem1 = !deps.fetch && (values.factcheck || values.labels);
+  if (asksSystem1 && decisionProvider === "openai" && keys.missing().includes("openai")) {
+    console.error("the OpenAI Decisions API needs an OpenAI API key (OPENAI_API_KEY)");
+    return exit(1);
+  }
+  if (asksSystem1 && decisionProvider === "typesafe" && keys.missing().includes("typesafe")) {
+    console.error("TypeSafe Jev needs a TypeSafe API key (TYPESAFE_API_KEY)");
+    return exit(1);
+  }
   const session = new Session({
     mode: "replay", sources, config: cfg, bus, exportBoundary: values.export, fetch: deps.fetch, sessionsDir: deps.sessionsDir,
-    engine, features: { factcheck: values.factcheck, labels: values.labels },
+    engine, decisionProvider, features: { factcheck: values.factcheck, labels: values.labels },
   });
-  log(`transcription: ${engine === "apple" ? "on this Mac (Apple Speech)" : "OpenAI"}; fact-checking ${values.factcheck ? "on" : "off"}, labels ${values.labels ? "on" : "off"}`);
+  log(`transcription: ${engine === "apple" ? "on this Mac (Apple Speech)" : "OpenAI"}; System 1: ${decisionProvider === "openai" ? "OpenAI Decisions" : "TypeSafe Jev"}; fact-checking ${values.factcheck ? "on" : "off"}, labels ${values.labels ? "on" : "off"}`);
   process.on("SIGINT", () => { void session.stop(); });
   await session.run();
 
