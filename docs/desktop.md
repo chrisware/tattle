@@ -132,7 +132,7 @@ macOS asks for **Microphone** and **System Audio Recording** the first time the 
 
 ## Updates
 
-`electron-updater` checks the project's GitHub Releases (`publish` in `electron-builder.yml`: `nicolasdao/tattle`) at launch and every 4 hours, only in the packaged app and only while nothing is on air, so a download never competes with a live call. It downloads the new version's zip in the background (only the changed blocks, using the `.blockmap` files) and installs it when the app quits. When a download is ready and nothing is on air, a sheet offers **Restart Now** or **Later**, once per version.
+`electron-updater` checks the project's GitHub Releases (`publish` in `electron-builder.yml`: `chrisware/tattle`, the fork this checkout builds from) at launch and every 4 hours, only in the packaged app and only while nothing is on air, so a download never competes with a live call. It downloads the new version's zip in the background (only the changed blocks, using the `.blockmap` files) and installs it when the app quits. When a download is ready and nothing is on air, a sheet offers **Restart Now** or **Later**, once per version.
 
 **Check for Updates…** (the app menu, since 28 September 2026) says what it finds, each time on a sheet:
 

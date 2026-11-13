@@ -98,7 +98,7 @@ afterEach(() => {
   for (const [parent] of e?.dialog.showMessageBox.mock.calls ?? []) expect(parent, "a dialog without a window").toBeInstanceOf(FakeWindow);
 });
 
-const REPO = "https://github.com/nicolasdao/tattle";
+const REPO = "https://github.com/chrisware/tattle";
 const RES = "/App/Contents/Resources";
 const HOUR = 60 * 60 * 1000;
 const updateItem = () => e.menu[0].submenu[1];

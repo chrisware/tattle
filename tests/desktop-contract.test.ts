@@ -95,12 +95,12 @@ describe("electron-builder.yml", () => {
     expect(mainTs).toContain('preload: join(import.meta.dirname, "preload.cjs")');
   });
 
-  it("publishes to GitHub nicolasdao/tattle, the repository desktop/main.ts links to", () => {
+  it("publishes to GitHub chrisware/tattle, the repository desktop/main.ts links to", () => {
     const publish = block(builder, "publish");
     expect(scalar(publish, "provider")).toBe("github");
     expect(scalar(publish, "releaseType")).toBe("release");
     const repo = `https://github.com/${scalar(publish, "owner")}/${scalar(publish, "repo")}`;
-    expect(repo).toBe("https://github.com/nicolasdao/tattle");
+    expect(repo).toBe("https://github.com/chrisware/tattle");
     expect(mainTs).toContain(`const REPO = "${repo}";`);
   });
 

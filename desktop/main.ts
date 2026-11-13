@@ -11,7 +11,7 @@ import { inProcessHandler } from "../src/server/inProcess.ts";
 
 // The page's address keeps the app's old name: its saved preferences are stored under it, so it must never change.
 const ORIGIN = "app://conversation-assistant";
-const REPO = "https://github.com/nicolasdao/tattle";
+const REPO = "https://github.com/chrisware/tattle";
 /** How long quitting waits for a session on air to end; its audio is complete within seconds (src/pipeline/session.ts). */
 const QUIT_WAIT_MS = 30_000;
 const UPDATE_EVERY_MS = 4 * 60 * 60 * 1000;

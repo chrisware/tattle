@@ -76,6 +76,6 @@ dmg:
   artifactName: Tattle-${version}-arm64.${ext}
 publish:
   provider: github
-  owner: nicolasdao
+  owner: chrisware
   repo: tattle
   releaseType: release
