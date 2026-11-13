@@ -55,6 +55,17 @@ describe("npm run replay", () => {
     expect([r.codes, r.errors]).toEqual([[1], ["--engine must be apple or openai"]]);
   });
 
+  test("an unknown System 1 provider: exit 1", async () => {
+    const r = await replay(["--host", "x.wav", "--provider", "jem"]);
+    expect([r.codes, r.errors]).toEqual([[1], ["--provider must be typesafe or openai"]]);
+  });
+
+  test("the chosen provider without its key: exit 1 and says which key", async () => {
+    const r = await replay(["--host", "x.wav", "--engine", "openai", "--provider", "openai"]);
+    expect(r.codes).toEqual([1]);
+    expect(r.errors).toEqual(["the OpenAI Decisions API needs an OpenAI API key (OPENAI_API_KEY)"]);
+  });
+
   test("Apple Speech where it cannot run: exit 1 with the reason", async () => {
     const r = await replay(["--host", "x.wav", "--engine", "apple"]);
     expect(r.codes).toEqual([1]);
@@ -94,7 +105,7 @@ describe("npm run replay", () => {
       wavFile(dir, silence(16_000), "host.wav");
       const r = await replay(["--host", join(dir, "host.wav"), "--engine", "apple", "--no-factcheck", "--no-labels", "--quiet"], apple);
       expect(r.text.startsWith("installing the on-device speech model...\n\r  25 %\r  100 %\n")).toBe(true);
-      expect(r.text).toContain("transcription: on this Mac (Apple Speech); fact-checking off, labels off");
+      expect(r.text).toContain("transcription: on this Mac (Apple Speech); System 1: TypeSafe Jev; fact-checking off, labels off");
       expect(r.codes).toEqual([0]);
     });
   });
@@ -152,7 +163,7 @@ describe("npm run replay", () => {
     wavFile(dir, silence(16_000), "host.wav");
     const r = await replay(["--host", join(dir, "host.wav"), "--quiet", "--no-factcheck", "--no-labels", "--speed", "1"], {}, (async () => { throw new Error("nothing is called"); }) as unknown as typeof fetch);
     expect(r.codes).toEqual([0]);
-    expect(r.text.split("\n")[0]).toBe("transcription: OpenAI; fact-checking off, labels off");
+    expect(r.text.split("\n")[0]).toBe("transcription: OpenAI; System 1: TypeSafe Jev; fact-checking off, labels off");
     expect(r.text).toContain("\n── summary ──\n");
     expect(r.text).toMatch(/utterances {2}0\n/);
     expect(r.text).toMatch(/verdicts {4}none\n/);
@@ -182,7 +193,7 @@ describe("npm run replay", () => {
     expect(r.text).toMatch(/ {2}✓ c_\d+ contradicted: A claim\. — It is cheaper\. \(1 sources, \d+ ms\)/);
     expect(r.codes).toEqual([0]);
     const lines = r.text.split("\n");
-    expect(lines[0]).toBe("transcription: OpenAI; fact-checking on, labels on");
+    expect(lines[0]).toBe("transcription: OpenAI; System 1: TypeSafe Jev; fact-checking on, labels on");
     expect(lines.filter((l) => /^\[\d+\.\ds\] .+: .+/.test(l)).length).toBeGreaterThanOrEqual(8); // utterances
     expect(r.text).toMatch(/ {2}── seg_\d+ closed \(\d+\.\d s(, forced)?\)/);
     expect(r.text).toMatch(/ {2}── seg_\d+ labels: \w+=\S+ .*markers=\[/);
