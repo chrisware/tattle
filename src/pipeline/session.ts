@@ -11,7 +11,7 @@ import { Transcriber, type TranscriptionContext, type TranscriptionResult } from
 import { LiveTranscriber, type LiveDeps } from "../transcribe/live.ts";
 import { AppleSpeech, type SpawnHelper, type Span } from "../transcribe/apple.ts";
 import { JevClient, type JevCallMeta, type JevCallRow } from "../jev/client.ts";
-import type { JevResponse, QuestionSet } from "../jev/types.ts";
+import type { DecisionProvider, JevResponse, QuestionSet } from "../jev/types.ts";
 import { S2Client } from "../factcheck/s2.ts";
 import { FactChecker, type S2Api } from "../factcheck/s1.ts";
 import { Segmenter, type PipelineUtterance, type Segment } from "./segmenter.ts";
@@ -77,6 +77,8 @@ export interface SessionOptions {
   healthDetail?: () => Record<string, unknown> | null;
   /** Streaming display text (live sessions and speed-1 replays); needs transcription.live.enabled. */
   liveText?: boolean;
+  /** Which service answers System 1: the saved choice, or the config default. */
+  decisionProvider?: DecisionProvider;
   /** Test seam for the realtime WebSocket. */
   liveConnect?: LiveDeps["connect"];
   /** The transcription engine; OpenAI unless given. */
@@ -261,6 +263,13 @@ export class Session {
     return this.engine === "apple" ? { engine: "apple", locale: cfg.apple.locale } : { engine: "openai", model: cfg.model };
   }
 
+  /** What session.json records about System 1's provider. */
+  get decisions(): { provider: DecisionProvider; model: string } {
+    const cfg = this.opts.config.app.decisions;
+    const provider = this.opts.decisionProvider ?? cfg.provider;
+    return { provider, model: provider === "openai" ? cfg.openai.model : this.opts.config.app.jev.model };
+  }
+
   get features(): Features {
     return { factcheck: this.opts.features?.factcheck !== false, labels: this.opts.features?.labels !== false && this.labelSet !== null };
   }
@@ -276,8 +285,9 @@ export class Session {
     const typesafe = this.opts.keys?.typesafe ?? process.env.TYPESAFE_API_KEY ?? "";
     const openai = this.opts.keys?.openai ?? process.env.OPENAI_API_KEY ?? "";
     const transcriber = new Transcriber(cfg.transcription, { fetch: f, apiKey: openai, budget: this.budget, log: (r) => log("transcriptions", r) });
+    const provider = this.decisions.provider;
     const jev = new JevClient(cfg.jev, {
-      fetch: f, apiKey: typesafe, budget: this.budget,
+      fetch: f, apiKey: typesafe, openaiKey: openai, provider, decisions: cfg.decisions.openai, budget: this.budget,
       log: (r, questions) => log("jev_calls", r, questions ? { questions } : undefined),
       onStart: (purpose) => this.emit("call.started", { system: "s1", purpose }),
     });
@@ -315,6 +325,7 @@ export class Session {
       id: this.id, app: appInfo(), mode: this.opts.mode, startedAt: this.startedAt.toISOString(),
       streams: this.opts.sources.map((s) => s.stream),
       config: cfg.app, voices: this.voices, features: this.features, transcription: this.transcription,
+      decisions: this.decisions,
       labelSet: this.timeline.set, stories: this.timeline.storiesActive, labelSetVersion: this.timeline.version,
       s1Version: this.factcheck.active.id, s1: cfg.s1,
     });

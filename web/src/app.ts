@@ -12,7 +12,7 @@ import { bindChat, chatOpened, openChat, renderChat } from "./chat.js";
 import { bindBespoke } from "./ui.js";
 import { desktop } from "./desktop.js";
 import { bindTransfer, renderTransferButtons } from "./transfer.js";
-import { refreshTranscription, renderKeys, renderTranscription, setOnAir, setTranscription, setupStatus } from "./keys.js";
+import { decisionSummary, refreshDecisions, refreshTranscription, renderDecisions, renderKeys, renderTranscription, setOnAir, setTranscription, setupStatus } from "./keys.js";
 import { bindPlayer, refreshFollow, seek, setPositionListener, syncPlayer } from "./player.js";
 import { panelName, PANELS, readRoute, setRoute, tabName, TABS, type Route } from "./router.js";
 import { addCall, applyEvent, emptyState, fromSnapshot, labelSetOf, type CallRow, type Dirty, type State } from "./state.js";
@@ -80,6 +80,7 @@ function onOpen(id: string) {
   if (id === "dlg-chat") chatOpened();
   if (id === "dlg-keys") void renderKeys((m) => toast(m, "ok"));
   if (id === "dlg-transcription") void renderTranscription((m) => toast(m, "ok"));
+  if (id === "dlg-decisions") void renderDecisions((m) => toast(m, "ok"));
 }
 
 function onFilter() {
@@ -281,6 +282,7 @@ bindTimeline(() => { dirty.add("timeline"); schedule(); });
 void loadDevices();
 void setupStatus(); // which keys are set, for the prompts
 void refreshTranscription().then(() => schedule());
+void refreshDecisions().then(() => schedule());
 await reload();
 await applyRoute(readRoute(), "load");
 connect();

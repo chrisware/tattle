@@ -98,6 +98,14 @@ export interface KeyStatus { name: KeyName; env: string; set: boolean; source: "
 export interface SetupStatus { configured: boolean; required: KeyName[]; keys: KeyStatus[]; path: string }
 
 export type TranscriptionEngine = "apple" | "openai";
+/** Which service answers System 1's questions (GET/PUT /api/decisions). */
+export type DecisionProvider = "typesafe" | "openai";
+export interface DecisionStatus {
+  provider: DecisionProvider;
+  saved: DecisionProvider | null;
+  typesafe: { keySet: boolean };
+  openai: { keySet: boolean };
+}
 export type ModelState = "missing" | "installing" | "installed" | "error";
 export interface TranscriptionStatus {
   engine: TranscriptionEngine;
@@ -175,6 +183,8 @@ export const api = {
   transcription: () => call<TranscriptionStatus>("GET", "/api/transcription"),
   setTranscription: (engine: TranscriptionEngine) => call<TranscriptionStatus>("PUT", "/api/transcription", { engine }),
   installModel: () => call<TranscriptionStatus>("POST", "/api/transcription/install"),
+  decisions: () => call<DecisionStatus>("GET", "/api/decisions"),
+  setDecisions: (provider: DecisionProvider) => call<DecisionStatus>("PUT", "/api/decisions", { provider }),
   about: () => call<{ name: string; version: string; license: { id: string | null; holder: string | null; text: string } }>("GET", "/api/about"),
   licenses: () => call<Licenses>("GET", "/api/licenses"),
   closeView: () => call<{ closed: string | null }>("POST", "/api/sessions/close"),

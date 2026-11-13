@@ -1090,14 +1090,15 @@ dialog.keys-dlg { width: min(680px, calc(100vw - 32px)); max-height: min(90vh, 8
 .key-prompt { display: grid; gap: 10px; padding: 12px 14px; background: var(--deck-2); border-left: 3px solid var(--hype); }
 .key-prompt-h { margin: 0; font: 700 15px/1.3 var(--cond); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink); }
 #chat-key { padding: 20px; }
-/* Transcription: two choices, one on */
-.engine-list { display: grid; gap: 10px; }
-.engine-opt { display: grid; gap: 6px; }
+/* Transcription and Decisions: two choices, one on */
+.engine-list, .decision-list { display: grid; gap: 10px; }
+.engine-opt, .decision-opt { display: grid; gap: 6px; }
 .engine-why { color: #ffc27a !important; }
 .engine-state { margin: 0 0 0 17px; font-size: 13.5px; color: var(--ink-2); }
 .engine-state .linkbtn { vertical-align: baseline; }
 .engine-onair { margin: 0 0 10px; color: #ffc27a; }
 .radio { flex: none; width: 20px; height: 20px; border: 2px solid var(--rule); display: grid; place-items: center; }
+.decision-choice { display: flex; gap: 10px; align-items: flex-start; width: 100%; text-align: left; }
 .radio i { width: 10px; height: 10px; background: transparent; }
 .feat[aria-checked="true"] .radio { border-color: var(--accent); }
 .feat[aria-checked="true"] .radio i { background: var(--accent); }

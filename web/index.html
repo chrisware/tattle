@@ -108,6 +108,7 @@
           <button role="menuitem" data-open="dlg-speakers"><b>Speakers</b><span id="m-speakers"></span></button>
           <button role="menuitem" data-open="dlg-labels"><b>Labels</b><span id="m-labels"></span></button>
           <button role="menuitem" data-open="dlg-transcription"><b>Transcription</b><span id="m-transcription"></span></button>
+          <button role="menuitem" data-open="dlg-decisions"><b>Decisions</b><span id="m-decisions"></span></button>
           <!-- the Mac app hides these (body.in-app): Settings… (⌘,) and About / Help → Licenses have them -->
           <button role="menuitem" class="browser-only" data-open="dlg-keys"><b>API keys</b><span>OpenAI, TypeSafe · optional</span></button>
           <div class="menu-foot browser-only"><span id="app-version"></span><button id="license-link" class="linkbtn">Licenses</button></div>
@@ -233,6 +234,11 @@
   <dialog id="dlg-keys" class="keys-dlg" aria-labelledby="h-keys">
     <div class="dlg-head"><h2 id="h-keys">API keys</h2><span class="sub">Checked before they are saved; used from the next call</span><button class="x" data-close aria-label="Close">×</button></div>
     <div id="keys" class="dlg-body"></div>
+  </dialog>
+
+  <dialog id="dlg-decisions" class="keys-dlg" aria-labelledby="h-decisions">
+    <div class="dlg-head"><h2 id="h-decisions">Decisions</h2><span class="sub">Who answers System 1's fast questions</span><button class="x" data-close aria-label="Close">×</button></div>
+    <div id="decisions" class="dlg-body"></div>
   </dialog>
 
   <dialog id="dlg-transcription" class="keys-dlg" aria-labelledby="h-transcription">

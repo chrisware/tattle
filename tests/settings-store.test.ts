@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { setAppPaths } from "../src/paths.ts";
-import { settingsPath, SettingsStore, TranscriptionSettings, type TranscriptionStatus } from "../src/settings.ts";
+import { DecisionSettings, settingsPath, SettingsStore, TranscriptionSettings, type TranscriptionStatus } from "../src/settings.ts";
 import type { AppleStatus } from "../src/transcribe/apple.ts";
 import { deferred } from "./fakes/async.ts";
 import { cleanTmpDirs, tmpDir, withEnv } from "./fakes/env.ts";
@@ -193,5 +193,31 @@ describe("TranscriptionSettings", () => {
       expect(t.status().apple.model).toBe("error");
       expect(t.status().apple.error).toMatch(/ENOENT/);
     });
+  });
+});
+
+describe("System 1's provider setting", () => {
+  const rig = (o: Partial<ConstructorParameters<typeof DecisionSettings>[0]> = {}) => {
+    const store = tmpStore();
+    return { store, d: new DecisionSettings({ store, fallback: "typesafe", typesafeKeySet: () => true, openaiKeySet: () => false, ...o }) };
+  };
+
+  it("answers the config fallback until the user chooses, then the saved choice, and reports both keys", () => {
+    const { store, d } = rig();
+    expect(d.status()).toEqual({ provider: "typesafe", saved: null, typesafe: { keySet: true }, openai: { keySet: false } });
+    expect(d.set("openai")).toMatchObject({ provider: "openai", saved: "openai" });
+    expect(readFileSync(store.path, "utf8")).toContain('"decisionProvider": "openai"');
+    // a fresh instance (a restart) reads it back
+    const again = rig({ store, fallback: "typesafe" });
+    expect(again.d.provider).toBe("openai");
+  });
+
+  it("the config fallback applies when nothing is saved, and an unknown saved value is dropped", () => {
+    const { store, d } = rig({ fallback: "openai", openaiKeySet: () => true });
+    expect(d.provider).toBe("openai");
+    mkdirSync(dirname(store.path), { recursive: true, mode: 0o700 });
+    writeFileSync(store.path, JSON.stringify({ decisionProvider: "whisper", transcriptionEngine: "apple" }), { mode: 0o600 });
+    expect(store.read()).toEqual({ transcriptionEngine: "apple" });
+    expect(d.provider).toBe("openai");
   });
 });

@@ -15,6 +15,11 @@
   },
   "jev": { "model": "jev-1.13.0", "utteranceTimeoutMs": 3000, "segmentTimeoutMs": 5000, "maxAttempts": 2,
            "backgroundTimeoutMs": 30000, "backgroundMaxAttempts": 5, "concurrency": 8, "segmentConcurrency": 4 },
+  "decisions": {
+    "provider": "typesafe",
+    "openai": { "model": "gpt-6-luna", "inputUsdPerMToken": 0.1, "outputUsdPerMToken": 0.5,
+                "baseUrl": "https://api.openai.com/v1" }
+  },
   "segmentation": { "boundaryThreshold": 0.6, "speakerChangeGapMs": 1500, "speakerChangeBonus": 0.1,
                     "minSegmentMs": 12000, "maxSegmentMs": 75000, "reorderTimeoutMs": 8000,
                     "pauseBoundaryMs": 2000 },

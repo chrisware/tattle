@@ -8,7 +8,7 @@ import type { TranscriptionSettings } from "../src/settings.ts";
 import { setAppPaths } from "../src/paths.ts";
 import { writeZip } from "../src/store/zip.ts";
 import { checkSeal, readSeal, SigningKey, type SealPayload } from "../src/store/seal.ts";
-import { SettingsStore } from "../src/settings.ts";
+import { DecisionSettings, SettingsStore } from "../src/settings.ts";
 import { loadConfig } from "../src/config.ts";
 import { fakeTimestampFetch } from "./fakes/timestamp.ts";
 import { requireAssets } from "./helpers.ts";
@@ -175,6 +175,34 @@ describe("Engine.start", () => {
       await expect(keyed.start({ mode: "nope" } as never)).rejects.toThrow("mode must be replay or live");
       const blank = new Engine({ sessionsDir: tmpDir("sessions-"), typesafeKey: "  " });
       expect(blank.typesafeKeySet()).toBe(false);
+    });
+  });
+
+  test("System 1's provider: the choice is validated, saved, and decides which key a session needs", async () => {
+    const store = new SettingsStore(join(tmpDir("decisions-"), "settings.json"));
+    const settings = (keys: { typesafe: boolean; openai: boolean }) =>
+      new DecisionSettings({ store, fallback: "typesafe", typesafeKeySet: () => keys.typesafe, openaiKeySet: () => keys.openai });
+    const none = new Engine({ sessionsDir: tmpDir("sessions-"), decisionSettings: settings({ typesafe: false, openai: false }) });
+    expect(none.decisions!.status()).toMatchObject({ provider: "typesafe", saved: null, typesafe: { keySet: false } });
+    expect(() => none.decisions!.set("whisper")).toThrow("provider must be typesafe or openai");
+    expect(() => none.decisions!.set("openai")).toThrow(/needs an OpenAI API key/);
+    expect(() => none.decisions!.set("typesafe")).toThrow(/TypeSafe API key/);
+
+    const engine = new Engine({
+      sessionsDir: tmpDir("sessions-"),
+      decisionSettings: settings({ typesafe: true, openai: true }),
+      typesafeKey: "ts-k-00000000000000000000", openaiKey: "sk-proj-k-000000000000000",
+    });
+    expect(engine.decisions!.set("openai")).toMatchObject({ provider: "openai", saved: "openai" });
+    expect(store.read().decisionProvider).toBe("openai");
+
+    // the saved provider decides which key a fact-checking session needs
+    const unkeyed = new Engine({ sessionsDir: tmpDir("sessions-"), decisionSettings: settings({ typesafe: true, openai: false }) });
+    await withEnv({ TYPESAFE_API_KEY: undefined, OPENAI_API_KEY: undefined }, async () => {
+      expect(store.read().decisionProvider).toBe("openai");
+      await expect(unkeyed.start({ mode: "replay", features: { factcheck: true, labels: false } })).rejects.toMatchObject({
+        status: 400, extra: { needsKey: "openai" }, message: expect.stringContaining("OpenAI's Decisions API"),
+      });
     });
   });
 

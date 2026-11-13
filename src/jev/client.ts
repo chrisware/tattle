@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import type { AppConfig } from "../config.ts";
 import type { Budget } from "../budget.ts";
-import type { JevAnswer, JevResponse, JevUsage, QuestionSet } from "./types.ts";
+import type { DecisionProvider, JevAnswer, JevResponse, JevUsage, QuestionSet } from "./types.ts";
+import { decisionsUrl, openaiAnswers, openaiInput, openaiQuestions, openaiUsage, quotaExhausted, type DecisionPrices } from "./decisions.ts";
 
 export const SYSTEMONE_URL = "https://api.typesafe.ai/v1/systemone";
 /** $42 per billion input tokens when the response omits usage.cost. Output tokens are free. */
@@ -63,6 +64,8 @@ export function parseRetryAfter(ra: string | null, now = Date.now()): number | n
 
 export interface JevCallRow {
   kind: "jev_call";
+  /** Which service answered: TypeSafe's Jev, or OpenAI's Decisions API. */
+  provider: DecisionProvider;
   purpose: JevPurpose;
   utterance_id?: string;
   segment_id?: string;
@@ -96,7 +99,14 @@ export interface JevCallMeta {
 
 export interface JevClientDeps {
   fetch: typeof fetch;
+  /** TypeSafe's key, sent only when the provider is TypeSafe. */
   apiKey: string;
+  /** OpenAI's key, sent only when the provider is OpenAI. */
+  openaiKey?: string;
+  /** Defaults to TypeSafe: the provider the app used before Decisions was offered. */
+  provider?: DecisionProvider;
+  /** Model and per-million prices of the Decisions API; required when the provider is OpenAI. */
+  decisions?: DecisionPrices & { model: string; baseUrl?: string };
   budget: Budget;
   /** `questions` rides along for live display only; the logged row keeps just their ids. */
   log: (row: JevCallRow, questions?: QuestionSet) => void;
@@ -177,9 +187,11 @@ export class JevClient {
         this.log(state, questions, meta, { ok: true, res, attempts: attempt, started });
         return res;
       } catch (e) {
-        const cls = classifyError(e);
         const status = e instanceof HttpError ? effectiveStatus(e) : null;
-        const pauses = e instanceof HttpError && (status === 429 || status === 402);
+        // OpenAI's exhausted credit is a 429, but retrying it never succeeds
+        const quota = this.provider === "openai" && status === 429 && e instanceof HttpError && quotaExhausted(e.body);
+        const cls: RetryClass = quota ? "fail" : classifyError(e);
+        const pauses = !quota && e instanceof HttpError && (status === 429 || status === 402);
         if (cls === "retry" && pauses) {
           // Shared pause for background callers; a live call goes straight to its fallback.
           const delay = backoffMs(attempt, (e as HttpError).retryAfterMs, this.deps.rand);
@@ -189,10 +201,15 @@ export class JevClient {
         if (cls === "fail" || attempt >= maxAttempts || (live && !liveRetryable)) {
           this.log(state, questions, meta, { ok: false, attempts: attempt, started, error: errorText(e) });
           if (e instanceof HttpError && status === 402 && cls === "fail") {
-            this.deps.budget.exhaust("provider", `jev:${meta.purpose}`, "The Jev provider refused the request (402)");
+            this.deps.budget.exhaust("provider", `jev:${meta.purpose}`, `${this.providerName} refused the request (402): the credit is used up`);
+          }
+          if (e instanceof HttpError && this.provider === "openai" && status === 429 && quotaExhausted(e.body)) {
+            this.deps.budget.exhaust("provider", `jev:${meta.purpose}`, "OpenAI refused the request (429 insufficient_quota): the credit is used up");
           }
           if (e instanceof HttpError && status === 401) {
-            throw new HttpError(401, e.body, null, "TypeSafe rejected the API key (401): check TYPESAFE_API_KEY");
+            throw new HttpError(401, e.body, null, this.provider === "openai"
+              ? "OpenAI rejected the API key (401): check OPENAI_API_KEY"
+              : "TypeSafe rejected the API key (401): check TYPESAFE_API_KEY");
           }
           throw e;
         }
@@ -204,7 +221,58 @@ export class JevClient {
     }
   }
 
+  private get provider(): DecisionProvider {
+    return this.deps.provider ?? "typesafe";
+  }
+
   private async send(state: unknown, questions: QuestionSet, timeoutMs: number): Promise<JevResponse> {
+    return this.provider === "openai" ? this.sendOpenAI(state, questions, timeoutMs) : this.sendTypesafe(state, questions, timeoutMs);
+  }
+
+  private async sendOpenAI(state: unknown, questions: QuestionSet, timeoutMs: number): Promise<JevResponse> {
+    const cfg = this.deps.decisions;
+    if (!cfg) throw new HttpError(-1, "the Decisions API is not configured", null, "the OpenAI Decisions API is not configured");
+    const url = decisionsUrl(cfg.baseUrl);
+    let res: Response;
+    try {
+      res = await this.deps.fetch(url, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${this.deps.openaiKey ?? ""}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ model: cfg.model, input: openaiInput(state), questions: openaiQuestions(questions) }),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (e) {
+      throw new HttpError(null, errorText(e));
+    }
+    const text = await this.readBody(res);
+    const retryAfterMs = parseRetryAfter(res.headers.get("retry-after"));
+    if (!res.ok) throw new HttpError(res.status, text, retryAfterMs);
+    const body = parseBody(text, res.status, retryAfterMs);
+    let usage: JevUsage;
+    try {
+      usage = openaiUsage(body.usage, cfg);
+    } catch (e) {
+      throw new HttpError(-1, text, null, errorText(e));
+    }
+    return {
+      answers: openaiAnswers(body, questions),
+      id: null,
+      model: typeof body.model === "string" ? body.model : cfg.model,
+      provider: "OpenAI",
+      usage,
+    };
+  }
+
+  /** Reads the body once; the timeout can fire while it streams. */
+  private async readBody(res: Response): Promise<string> {
+    try {
+      return await res.text(); // error bodies are not always JSON
+    } catch (e) {
+      throw new HttpError(null, errorText(e));
+    }
+  }
+
+  private async sendTypesafe(state: unknown, questions: QuestionSet, timeoutMs: number): Promise<JevResponse> {
     let res: Response;
     try {
       res = await this.deps.fetch(SYSTEMONE_URL, {
@@ -216,23 +284,10 @@ export class JevClient {
     } catch (e) {
       throw new HttpError(null, errorText(e));
     }
-    let text: string;
-    try {
-      text = await res.text(); // read once: error bodies are not always JSON
-    } catch (e) {
-      throw new HttpError(null, errorText(e)); // the timeout can fire while the body streams
-    }
+    const text = await this.readBody(res);
     const retryAfterMs = parseRetryAfter(res.headers.get("retry-after"));
     if (!res.ok) throw new HttpError(res.status, text, retryAfterMs);
-    const start = text.indexOf("{"); // the body may start with keep-alive whitespace
-    if (start < 0) throw new HttpError(res.status, text, retryAfterMs);
-    let body: any;
-    try {
-      body = JSON.parse(text.slice(start));
-    } catch {
-      throw new HttpError(res.status, text, retryAfterMs);
-    }
-    if (body.error) throw new HttpError(res.status, text, retryAfterMs); // an upstream error delivered with HTTP 200
+    const body = parseBody(text, res.status, retryAfterMs);
     const usage = usageOf(body.usage, text);
     return {
       answers: body.answers ?? {},
@@ -243,16 +298,21 @@ export class JevClient {
     };
   }
 
+  private get providerName(): string {
+    return this.provider === "openai" ? "OpenAI" : "The Jev provider";
+  }
+
   private log(
     state: unknown, questions: QuestionSet, meta: JevCallMeta,
     r: { ok: boolean; res?: JevResponse; attempts: number; started: number; error?: string },
   ) {
     this.deps.log({
       kind: "jev_call",
+      provider: this.provider,
       purpose: meta.purpose,
       ...(meta.utterance_id ? { utterance_id: meta.utterance_id } : {}),
       ...(meta.segment_id ? { segment_id: meta.segment_id } : {}),
-      request_hash: requestHash(this.cfg.model, state, questions),
+      request_hash: requestHash(this.provider === "openai" ? `openai/${this.deps.decisions?.model ?? ""}` : this.cfg.model, state, questions),
       state,
       question_ids: Object.keys(questions),
       question_set_version: meta.question_set_version ?? null,
@@ -273,6 +333,20 @@ export class JevClient {
 
 export function requestHash(model: string, state: unknown, questions: QuestionSet): string {
   return createHash("sha256").update(JSON.stringify({ model, state, questions })).digest("hex").slice(0, 16);
+}
+
+/** The JSON body, tolerating keep-alive whitespace before it and an upstream error delivered with HTTP 200. */
+function parseBody(text: string, status: number, retryAfterMs: number | null): any {
+  const start = text.indexOf("{");
+  if (start < 0) throw new HttpError(status, text, retryAfterMs);
+  let body: any;
+  try {
+    body = JSON.parse(text.slice(start));
+  } catch {
+    throw new HttpError(status, text, retryAfterMs);
+  }
+  if (body?.error) throw new HttpError(status, text, retryAfterMs);
+  return body;
 }
 
 function errorText(e: unknown): string {

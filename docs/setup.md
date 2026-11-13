@@ -19,7 +19,7 @@ Tattle has two API keys, and neither is needed to open the app on macOS 26 or la
 | `OPENAI_API_KEY` | OpenAI | Chat, label drafting, fact-check research, and transcription with the OpenAI engine | research and chat are metered in tokens; transcription $1.23 an hour |
 | `TYPESAFE_API_KEY` | TypeSafe | Jev fact-checking and labels (see [Jev](jev.md)) | about $0.00004 an utterance; output tokens are free |
 
-Which keys are **required** to open the app follows the transcription engine (`KeySetup.status().required`): `["openai"]` when OpenAI transcribes, `[]` with Apple Speech on this Mac. TypeSafe is never required to open the app. Without the TypeSafe key a session is transcript-only. Fact-checking research, Chat, and Create with AI need `OPENAI_API_KEY`. Start live asks for whichever of those is missing.
+Which keys are **required** to open the app follows the transcription engine (`KeySetup.status().required`): `["openai"]` when OpenAI transcribes, `[]` with Apple Speech on this Mac. TypeSafe is never required to open the app. Which key fact-checking and labeling need follows System 1's provider: TypeSafe's, or OpenAI's when the Decisions API answers (see [Jev](jev.md#choosing-the-provider)). Without the TypeSafe key a session is transcript-only. Fact-checking research, Chat, and Create with AI need `OPENAI_API_KEY`. Start live asks for whichever of those is missing.
 
 ## First run: the setup screen
 

@@ -5,6 +5,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSy
 import { dirname, join } from "node:path";
 import { appSupportDir } from "./paths.ts";
 import type { TranscriptionEngine } from "./pipeline/session.ts";
+import type { DecisionProvider } from "./jev/types.ts";
 import { appleSpeechStatus, installAppleModel, type AppleStatus } from "./transcribe/apple.ts";
 
 export const MODEL_JOBS = ["chat", "labels", "s2"] as const;
@@ -18,6 +19,8 @@ export interface ModelChoices {
 
 export interface Settings {
   transcriptionEngine?: TranscriptionEngine;
+  /** Which service answers System 1's questions: TypeSafe's Jev, or OpenAI's Decisions API. */
+  decisionProvider?: DecisionProvider;
   /** Seals are timestamped by independent authorities, which receive only a hash (docs/recordings.md § Proof of a recording). */
   trustedTimestamps?: boolean;
   models?: ModelChoices;
@@ -36,10 +39,12 @@ export class SettingsStore {
     try {
       const json = JSON.parse(readFileSync(this.path, "utf8"));
       const e = json?.transcriptionEngine;
+      const p = json?.decisionProvider;
       const t = json?.trustedTimestamps;
       const models = modelChoices(json?.models);
       return {
         ...(e === "apple" || e === "openai" ? { transcriptionEngine: e } : {}),
+        ...(p === "typesafe" || p === "openai" ? { decisionProvider: p } : {}),
         ...(typeof t === "boolean" ? { trustedTimestamps: t } : {}),
         ...(models ? { models } : {}),
       };
@@ -220,5 +225,54 @@ export class TranscriptionSettings {
 
   get appleReason(): string | null {
     return this.apple.reason;
+  }
+}
+
+/** The two services System 1 can ask: OpenAI's own Decisions API, or TypeSafe's Jev. */
+export interface DecisionStatus {
+  provider: DecisionProvider;
+  /** What the user chose, or null while the config's default is in force. */
+  saved: DecisionProvider | null;
+  typesafe: { keySet: boolean };
+  openai: { keySet: boolean };
+}
+
+export interface DecisionSettingsDeps {
+  store?: SettingsStore;
+  /** The config's default, used until the user chooses (config/app.json `decisions.provider`). */
+  fallback: DecisionProvider;
+  typesafeKeySet(): boolean;
+  openaiKeySet(): boolean;
+  onChange?(s: DecisionStatus): void;
+}
+
+/** The provider setting as the server sees it: one choice, read at every session start. */
+export class DecisionSettings {
+  private readonly store: SettingsStore;
+
+  constructor(private readonly deps: DecisionSettingsDeps) {
+    this.store = deps.store ?? new SettingsStore();
+  }
+
+  get provider(): DecisionProvider {
+    return this.store.read().decisionProvider ?? this.deps.fallback;
+  }
+
+  get saved(): DecisionProvider | null {
+    return this.store.read().decisionProvider ?? null;
+  }
+
+  status(): DecisionStatus {
+    return {
+      provider: this.provider, saved: this.saved,
+      typesafe: { keySet: this.deps.typesafeKeySet() }, openai: { keySet: this.deps.openaiKeySet() },
+    };
+  }
+
+  /** Saves the choice. The caller checks what may refuse it (on air, no key). */
+  set(provider: DecisionProvider): DecisionStatus {
+    this.store.save({ decisionProvider: provider });
+    this.deps.onChange?.(this.status());
+    return this.status();
   }
 }

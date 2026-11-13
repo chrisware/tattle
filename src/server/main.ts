@@ -11,6 +11,7 @@ import { checkDraft, checkLabelSet, LABEL_FORMAT, type LabelSet } from "../label
 import { recordedSegments, tryLabelSet } from "../labels/try.ts";
 import { AssistError, assistSystemPrompt, LabelsAssistant, type AssistMessage } from "../labels/assist.ts";
 import { JevClient } from "../jev/client.ts";
+import type { DecisionProvider } from "../jev/types.ts";
 import { Budget, BudgetExhaustedError } from "../budget.ts";
 import { EventBus, processSecrets, type AppEvent } from "../store/events.ts";
 import { resolveRecorded, SessionLibrary } from "../store/library.ts";
@@ -28,7 +29,7 @@ import { requestTimestamps } from "../store/timestamp.ts";
 import { exportTranscript, transcriptFileName } from "../store/transcript.ts";
 import { appInfo } from "../version.ts";
 import { KeyError, KeySetup, KeyStore, type KeyName } from "../keys.ts";
-import { SettingsStore, TranscriptionSettings, type ModelChoices, type TranscriptionStatus } from "../settings.ts";
+import { DecisionSettings, SettingsStore, TranscriptionSettings, type DecisionStatus, type ModelChoices, type TranscriptionStatus } from "../settings.ts";
 import { appPaths, migrateAppSupportDir } from "../paths.ts";
 import { licenses } from "../licenses.ts";
 import { isMain } from "../entry.ts";
@@ -103,6 +104,12 @@ export function labelSetFileName(name: string, id: string): string {
   return `${base}.tattle-labels`;
 }
 
+/** Which service answers System 1, as the routes see it (see docs/jev.md § Choosing the provider). */
+export interface DecisionApi {
+  status(): DecisionStatus;
+  set(provider: unknown): DecisionStatus;
+}
+
 /** The transcription engine setting, as the routes see it (see docs/transcription.md). */
 export interface TranscriptionApi {
   status(): TranscriptionStatus;
@@ -174,6 +181,8 @@ export interface EngineApi {
   transfer?: TransferApi;
   /** Absent: the transcription routes answer 501. */
   transcription?: TranscriptionApi;
+  /** Absent: the decisions routes answer 501. */
+  decisions?: DecisionApi;
   /** Whether the OpenAI key is set (chat and label drafting check it before calling). */
   openaiKeySet?(): boolean;
   /** Whether the TypeSafe key is set (fact-checking and labels check it before calling Jev). */
@@ -216,6 +225,8 @@ export interface EngineOptions {
   typesafeKey?: string;
   /** The engine setting; without it, sessions transcribe with OpenAI. */
   transcription?: TranscriptionSettings;
+  /** System 1's provider setting; without it, the config default answers. */
+  decisionSettings?: DecisionSettings;
   /** The label-set library; by default the built-in sets and the user's folder (src/paths.ts). */
   labelSets?: LabelSetStore;
   /** Where trusted timestamps are switched on (settings.json by default). */
@@ -469,6 +480,28 @@ export class Engine implements EngineApi {
     return this.modelChoices();
   }
 
+  private get decisionProvider(): DecisionProvider {
+    return this.opts.decisionSettings?.provider ?? this.config.app.decisions.provider;
+  }
+
+  private readonly decisionApi: DecisionApi = {
+    status: () => this.opts.decisionSettings!.status(),
+    set: (provider) => {
+      const d = this.opts.decisionSettings!;
+      if (provider !== "typesafe" && provider !== "openai") throw new ApiError(400, "provider must be typesafe or openai");
+      if (this.session && this.session.status !== "ended") throw new ApiError(409, "the System 1 provider can be changed when no session is on air");
+      if (provider === "openai" && !this.openaiKeySet()) {
+        throw new ApiError(400, "System 1 with OpenAI's Decisions API needs an OpenAI API key.", { needsKey: "openai" });
+      }
+      if (provider === "typesafe" && !this.typesafeKeySet()) throw new ApiError(400, TYPESAFE_MESSAGE, { needsKey: "typesafe" });
+      return d.set(provider);
+    },
+  };
+
+  get decisions(): DecisionApi | undefined {
+    return this.opts.decisionSettings ? this.decisionApi : undefined;
+  }
+
   private get engineChoice(): TranscriptionEngine {
     return this.opts.transcription?.engine ?? "openai";
   }
@@ -631,8 +664,12 @@ export class Engine implements EngineApi {
     // what this session needs before anything starts: the keys its features and engine use, and Apple's model
     const engine = this.engineChoice;
     const realServices = !this.opts.session?.services; // tests inject services, which need no key
-    if (realServices && (features.factcheck !== false || features.labels) && !this.typesafeKeySet()) {
+    const provider = this.decisionProvider;
+    if (realServices && (features.factcheck !== false || features.labels) && provider === "typesafe" && !this.typesafeKeySet()) {
       throw new ApiError(400, TYPESAFE_MESSAGE, { needsKey: "typesafe" as KeyName });
+    }
+    if (realServices && (features.factcheck !== false || features.labels) && provider === "openai" && !this.openaiKeySet()) {
+      throw new ApiError(400, "Fact-checking and labels with OpenAI's Decisions API need an OpenAI API key.", { needsKey: "openai" as KeyName });
     }
     if (realServices && features.factcheck !== false && !this.openaiKeySet()) {
       throw new ApiError(400, "Fact-checking research needs an OpenAI API key.", { needsKey: "openai" as KeyName });
@@ -679,7 +716,7 @@ export class Engine implements EngineApi {
     if (desk) config.app.echoGate.mode = "never";
     this.session = new Session({
       mode, sources, config, bus: this.bus, sessionsDir: this.opts.sessionsDir,
-      healthDetail: () => this.captureDetail, liveText, features, engine, labelSet, stories,
+      healthDetail: () => this.captureDetail, liveText, features, engine, labelSet, stories, decisionProvider: provider,
       // a desk input is one person per channel; a call still takes the remote voice count (0 means no limit)
       ...(desk
         ? { voices: { host: 1, remote: 1 } }
@@ -768,7 +805,9 @@ export class Engine implements EngineApi {
    * never into the recording's folder.
    */
   private async tryOn(body: unknown) {
-    if (!this.typesafeKeySet()) throw new ApiError(400, "Please provide your TypeSafe API key to try a label set on a recording.", { needsKey: "typesafe" });
+    const provider = this.decisionProvider;
+    if (provider === "typesafe" && !this.typesafeKeySet()) throw new ApiError(400, "Please provide your TypeSafe API key to try a label set on a recording.", { needsKey: "typesafe" });
+    if (provider === "openai" && !this.openaiKeySet()) throw new ApiError(400, "Please provide your OpenAI API key to try a label set on a recording.", { needsKey: "openai" });
     if (this.session && this.session.status !== "ended") throw new ApiError(409, "a session is on air: try a label set after it ends");
     const b = (body ?? {}) as { set?: unknown; sessionId?: unknown; minutes?: unknown };
     const checked = checkLabelSet(asDraft(b.set));
@@ -790,6 +829,8 @@ export class Engine implements EngineApi {
     const jev = new JevClient(cfg.jev, {
       fetch: (...a) => (this.opts.session?.fetch ?? this.opts.fetch ?? fetch)(...a),
       apiKey: (this.opts.typesafeKey ?? this.opts.session?.keys?.typesafe ?? process.env.TYPESAFE_API_KEY ?? "").trim(),
+      openaiKey: (this.opts.openaiKey ?? this.opts.session?.keys?.openai ?? process.env.OPENAI_API_KEY ?? "").trim(),
+      provider, decisions: cfg.decisions.openai,
       budget, log: (r) => appendFileSync(log, JSON.stringify({ ...r, session_id: id }) + "\n"),
     });
     try {
@@ -1079,6 +1120,13 @@ export function createApiServer(engine: EngineApi, opts: { webRoot?: string; set
       if (m === "GET" && path === "/api/licenses") return send(res, 200, licenses());
       if (m === "GET" && path === "/api/engine") return send(res, 200, { startedAt: new Date(BOOTED_AT).toISOString(), stale: engineStale() });
       if (m === "GET" && path === "/api/stats") return send(res, 200, engine.stats());
+      if (path === "/api/decisions") {
+        const d = engine.decisions;
+        if (!d) throw new ApiError(501, "the System 1 provider setting is not available");
+        if (m === "GET") return send(res, 200, d.status());
+        if (m === "PUT") return send(res, 200, d.set((await readJson(req)).provider));
+      }
+
       if (path === "/api/transcription" || path === "/api/transcription/install") {
         const t = engine.transcription;
         if (!t) throw new ApiError(501, "the transcription setting is not available");
@@ -1225,6 +1273,11 @@ export function bootEngine() {
   const config = loadConfig();
   const keySet = (name: KeyName) => keys.status().some((k) => k.name === name && k.set);
   let engine: Engine | null = null;
+  const decisions = new DecisionSettings({
+    fallback: config.app.decisions.provider,
+    typesafeKeySet: () => keySet("typesafe"),
+    openaiKeySet: () => keySet("openai"),
+  });
   const transcription = new TranscriptionSettings({
     openaiKeySet: () => keySet("openai"),
     // transient, like live text: the engine choice and the model's progress are not part of any session
@@ -1238,7 +1291,7 @@ export function bootEngine() {
     required: () => (transcription.engine === "openai" ? ["openai"] : []),
   });
   engine = new Engine({
-    config, transcription,
+    config, transcription, decisionSettings: decisions,
     live: (mic, onStatus, desk) => startNativeCapture({ mic: desk ? undefined : (mic === "builtin" ? undefined : mic), desk, onStatus }),
     devices: () => listDevices(),
   });

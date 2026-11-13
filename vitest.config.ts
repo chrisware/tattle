@@ -11,6 +11,7 @@ export default defineConfig({
       include: ["src/**/*.ts", "desktop/**/*.ts", "web/src/**/*.ts"],
       exclude: ["src/types/**", "src/cli/smoke.ts", "src/cli/preflight.ts"], // live-only CLIs: they exist to call real services
       reporter: ["text", "html", "json-summary"],
+      reportOnFailure: true, // a failing test still measures: the threshold check is about the code, not the outcome
       // Per-folder floors (docs/testing.md § Coverage policy). They only go up: raise them to the new floor after each
       // round of tests, never lower them to get a green run.
       thresholds: {
