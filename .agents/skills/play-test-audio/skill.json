@@ -1,0 +1,21 @@
+{
+	"name": "play-test-audio",
+	"version": "0.2.0",
+	"description": "Tattle — Play test audio into BlackHole and the speakers. Use when playing a fixture, a stereo wav, or two channel files for a desk session. Not for Audio MIDI Setup or the system default output.",
+	"type": "skill",
+	"keywords": ["audio", "blackhole", "fixture", "playback", "tattle"],
+	"license": "UNLICENSED",
+	"dependencies": {},
+	"systemDependencies": {
+		"swiftc": {
+			"description": "Swift compiler from Xcode Command Line Tools",
+			"version": ">=5.9.0",
+			"check": "swiftc --version",
+			"install": {
+				"darwin": "xcode-select --install",
+				"linux": "Not supported on Linux",
+				"win32": "Not supported on Windows"
+			}
+		}
+	}
+}
