@@ -970,6 +970,15 @@ describe("renderHealth", () => {
     expect(meters()[2]!.querySelector(".dev")?.textContent).toBe("Desk 4ch");
   });
 
+  test("three or more streams give the meters their own row under the header; two stay in it", () => {
+    P.renderHealth(live({ streams: ["ch1", "ch2", "ch3"] }));
+    expect($("#top").classList.contains("many-health")).toBe(true);
+    expect($("#health").parentElement?.id).toBe("top");
+    P.renderHealth(live({ streams: ["host", "remote"] }));
+    expect($("#top").classList.contains("many-health")).toBe(false);
+    expect($("#health").parentElement?.classList.contains("top-right")).toBe(true);
+  });
+
   test("the session's own streams are the meters: one stream, one meter", () => {
     P.renderHealth(live({ streams: ["host"] }));
     expect(meters().length).toBe(1);

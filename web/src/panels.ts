@@ -587,14 +587,27 @@ function renderSpeakerMode(st: State) {
   if (on && el.textContent !== device) el.textContent = device;
 }
 
+/** One or two meters sit in the header row; three or more get their own full-width row under it. */
+function placeHealth(many: boolean) {
+  const top = $("#top");
+  const health = $("#health");
+  const right = top?.querySelector(".top-right");
+  if (!top || !health || !right) return;
+  top.classList.toggle("many-health", many);
+  if (many && health.parentElement !== top) top.append(health);
+  else if (!many && health.parentElement !== right) right.prepend(health);
+}
+
 export function renderHealth(st: State) {
   renderSpeakerMode(st);
   if (st.session?.status === "archived") {
+    placeHealth(false);
     return replace($("#health")); // an opened recording has no live streams
   }
   const paused = !!st.session?.paused;
   const running = st.session?.status === "running" && !paused;
   const streams: Stream[] = st.session?.streams ?? ["host", "remote"];
+  placeHealth(streams.length > 2);
   replace($("#health"), streams.map((stream, index) => {
     const hl = st.health[stream];
     const now = Date.now();

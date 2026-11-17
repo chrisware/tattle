@@ -145,13 +145,17 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; line-height:
 /* on air: Start live and Replay only apply to starting a session */
 .top.on-air #start-live, .top.on-air #replay-btn { display: none; }
 
-.health { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }
+.health { display: flex; gap: 12px; align-items: center; }
 .meter { width: 136px; display: grid; gap: 3px; }
 .meter .row1 { display: flex; gap: 6px; align-items: baseline; font-size: 11.5px; min-width: 0; }
-.meter .who { font: 700 12px/1 var(--cond); letter-spacing: 0.12em; text-transform: uppercase; }
+.meter .who { font: 700 12px/1 var(--cond); letter-spacing: 0.12em; text-transform: uppercase; flex: none; white-space: nowrap; }
 .meter .who.host { color: var(--host); }
 .meter .who.remote { color: var(--remote); }
-.meter .dev { color: var(--mute); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.meter .dev { color: var(--mute); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto; }
+/* three or more streams: the header grows a full-width meter row, instead of squeezing them into it */
+.top.many-health { flex-wrap: wrap; height: auto; min-height: 60px; }
+.top.many-health > .onair, .top.many-health > .strap, .top.many-health > .clock, .top.many-health > .top-right { height: 60px; }
+.top.many-health > #health { flex: 1 1 100%; padding: 0 16px 8px; border-top: 1px solid var(--rule); }
 .meter .bar { height: 7px; background: var(--deck-3); position: relative; }
 .meter .bar b { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, var(--good) 0 70%, var(--hype) 70% 88%, var(--live) 88%); background-size: 136px 100%; transition: width 0.25s; }
 .meter .bar::after { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(90deg, transparent 0 4px, var(--deck) 4px 6px); }
