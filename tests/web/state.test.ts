@@ -495,3 +495,9 @@ describe("addCall and s1Counters", () => {
     expect(s1Counters(emptyState())).toEqual({ flags: 0, goodFlags: 0, falseAlarms: 0, misses: 0, repeats: 0 });
   });
 });
+
+describe("streamLabel", () => {
+  test("names the classic pair, a desk channel, and anything else as itself", () => {
+    expect(["host", "remote", "ch1", "ch12", "tape"].map(state.streamLabel)).toEqual(["Host", "Call", "Channel 1", "Channel 12", "tape"]);
+  });
+});

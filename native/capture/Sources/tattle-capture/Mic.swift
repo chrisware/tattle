@@ -4,7 +4,7 @@ import CoreAudio
 import Foundation
 
 /// One input device, one or more channels, each pushed as its own stream. Voice processing stays off.
-/// Call capture uses channel 0. Desk capture uses channel 0 as host and channel 1 as remote.
+/// Call capture uses channel 0. Desk capture pushes channel i as stream i (ch1..chN).
 final class Mic {
     private let engine = AVAudioEngine()
     private let converters: [AdaptiveConverter]

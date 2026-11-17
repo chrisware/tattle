@@ -24,7 +24,8 @@ describe("SessionStore", () => {
     const root = tmpDir("store-");
     const s = new SessionStore({ root, streams: ["host", "remote"] });
     expect(s.dir).toBe(join(root, s.id));
-    expect(JSONL_FILES.length).toBe(11);
+    expect(JSONL_FILES.length).toBe(12);
+    expect(JSONL_FILES).toContain("memory");
     for (const f of JSONL_FILES) expect(readFileSync(join(s.dir, `${f}.jsonl`), "utf8")).toBe("");
     expect(existsSync(join(s.dir, "host.wav"))).toBe(true);
     expect(existsSync(join(s.dir, "remote.wav"))).toBe(true);

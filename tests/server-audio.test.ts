@@ -50,6 +50,22 @@ describe("serveMixedAudio", () => {
     expect([0, 1, 2].map((i) => r.body.readInt16LE(44 + i * 2))).toEqual([100, -200, 300]);
   });
 
+  test("a multi-channel recording mixes its own streams, and stray WAVs beside them are ignored", async () => {
+    const names = ["ch1", "ch2", "ch3", "ch4"];
+    const values = [100, 200, -50, 300];
+    const files: Record<string, Buffer> = { "session.json": Buffer.from(JSON.stringify({ streams: names })) };
+    names.forEach((n, i) => { files[`${n}.wav`] = wav([values[i]]); });
+    files["remote.wav"] = wav([20_000]); // not one of the recording's streams
+    folder(files);
+    const gains = names.map((n) => streamGain(join(dir, `${n}.wav`)));
+    let mixed = 0;
+    values.forEach((v, i) => { mixed = Math.fround(mixed + (v / 32768) * gains[i]!); });
+    const r = await get();
+    expect(r.status).toBe(200);
+    expect(r.body.length).toBe(46);
+    expect(r.body.readInt16LE(44)).toBe(Math.round(limit(mixed) * 32767));
+  });
+
   test("HEAD answers the headers only, with the full length", async () => {
     folder({ "host.wav": wav([1, 2, 3, 4]) });
     const r = await get(undefined, "HEAD");

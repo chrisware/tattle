@@ -171,15 +171,18 @@ describe("loadDevices", () => {
     expect(sel.title).toBe("plain");
   });
 
-  test("two channels lists only inputs with at least two channels", async () => {
+  test("a multi-channel input lists only devices with at least the chosen channel count", async () => {
     fake.devices!.mockResolvedValue([
       { uid: "air", name: "AirPods", transport: "bluetooth", isDefault: false, channels: 1 },
       { uid: "bh", name: "BlackHole 2ch", transport: "virtual", isDefault: false, channels: 2 },
+      { uid: "desk", name: "Desk 4ch", transport: "usb", isDefault: false, channels: 4 },
     ]);
     $<HTMLSelectElement>("#source").value = "desk";
+    $<HTMLSelectElement>("#desk-channels").value = "4";
     await P.loadDevices();
-    expect([...$<HTMLSelectElement>("#mic").options].map((o) => `${o.value}=${o.textContent}`)).toEqual(["bh=BlackHole 2ch (virtual)"]);
+    expect([...$<HTMLSelectElement>("#mic").options].map((o) => `${o.value}=${o.textContent}`)).toEqual(["desk=Desk 4ch (usb)"]);
     expect($("#voices-field").hidden).toBe(true);
+    expect($("#desk-channels-field").hidden).toBe(false);
     expect($("#desk-note").hidden).toBe(false);
     expect($("#mic-label").textContent).toBe("Input");
   });
@@ -546,22 +549,25 @@ describe("the Start live window", () => {
     expect($<HTMLDialogElement>("#dlg-start").open).toBe(false);
   });
 
-  test("two channels starts that input, sends no microphone or voice count, and remembers the desk", async () => {
+  test("a multi-channel input starts with its channel count, sends no microphone or voice count, and is remembered", async () => {
     await openWith({ key: true });
     fake.devices!.mockResolvedValue([
       { uid: "air", name: "AirPods", transport: "bluetooth", isDefault: false, channels: 1 },
-      { uid: "bh", name: "BlackHole 2ch", transport: "virtual", isDefault: false, channels: 2 },
+      { uid: "desk", name: "Desk 4ch", transport: "usb", isDefault: false, channels: 4 },
     ]);
     $<HTMLSelectElement>("#source").value = "desk";
     $<HTMLSelectElement>("#source").dispatchEvent(new Event("change"));
+    $<HTMLSelectElement>("#desk-channels").value = "4";
+    $<HTMLSelectElement>("#desk-channels").dispatchEvent(new Event("change"));
     await flush();
-    $<HTMLSelectElement>("#mic").value = "bh";
+    $<HTMLSelectElement>("#mic").value = "desk";
     $<HTMLSelectElement>("#voices").value = "4";
     $("#start-go").click();
     await flush();
-    expect(fake.startDesk).toHaveBeenCalledWith("bh", { factcheck: true, labels: true }, { labelSet: "ai-podcast", stories: [] });
+    expect(fake.startDesk).toHaveBeenCalledWith("desk", 4, { factcheck: true, labels: true }, { labelSet: "ai-podcast", stories: [] });
     expect(fake.startLive).not.toHaveBeenCalled();
-    expect([localStorage.getItem("pa.desk"), localStorage.getItem("pa.mic"), localStorage.getItem("pa.source")]).toEqual(["bh", null, "desk"]);
+    expect([localStorage.getItem("pa.desk"), localStorage.getItem("pa.mic"), localStorage.getItem("pa.source"), localStorage.getItem("pa.deskchannels")])
+      .toEqual(["desk", null, "desk", "4"]);
   });
 
   test("with no microphone to choose and labels off, Start sends no mic, no set and no stories, and saves nothing", async () => {
@@ -921,7 +927,7 @@ describe("renderHealth", () => {
     expect(meters().map((m) => m.className)).toEqual(["meter", "meter"]);
     expect([meta(0), meta(1), bar(0)]).toEqual(["waiting…", "waiting…", "0%"]);
     expect(meters()[0]!.title).toBe("Host · last frame –");
-    expect(meters().map((m) => m.querySelector(".who")!.textContent)).toEqual(["Host", "Remote"]);
+    expect(meters().map((m) => m.querySelector(".who")!.textContent)).toEqual(["Host", "Call"]);
   });
 
   test("a live session with no health yet shows red", () => {
@@ -956,9 +962,18 @@ describe("renderHealth", () => {
     expect([meters()[0]!.classList.contains("alert"), meta(0)]).toEqual([true, "−55 dBFS · silent 12 s"]);
   });
 
-  test("a stream the session does not have is absent, never red", () => {
+  test("a multi-channel session shows one meter per channel, named generically", () => {
+    const st = live({ streams: ["ch1", "ch2", "ch3", "ch4"] });
+    st.health.ch3 = health({ detail: { streams: [{ index: 2, device: "Desk 4ch" }] } });
+    P.renderHealth(st);
+    expect(meters().map((m) => m.querySelector(".who")!.textContent)).toEqual(["Channel 1", "Channel 2", "Channel 3", "Channel 4"]);
+    expect(meters()[2]!.querySelector(".dev")?.textContent).toBe("Desk 4ch");
+  });
+
+  test("the session's own streams are the meters: one stream, one meter", () => {
     P.renderHealth(live({ streams: ["host"] }));
-    expect([meters()[1]!.className, meta(1)]).toEqual(["meter absent", "absent"]);
+    expect(meters().length).toBe(1);
+    expect(meters()[0]!.querySelector(".who")!.textContent).toBe("Host");
   });
 
   test("paused: 'paused', never red", () => {

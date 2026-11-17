@@ -3,7 +3,7 @@ import { PassThrough } from "node:stream";
 import type { HelperProcess } from "../../src/audio/nativeSource.ts";
 import type { AudioFrame } from "../../src/audio/source.ts";
 
-export function frameBytes(stream: 0 | 1, sessionMs: number, samples: number[]): Buffer {
+export function frameBytes(stream: number, sessionMs: number, samples: number[]): Buffer {
   const b = Buffer.alloc(20 + samples.length * 2);
   b.write("PCAP", 0, "ascii");
   b[4] = stream;

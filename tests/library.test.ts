@@ -215,6 +215,12 @@ describe("the library, case by case", () => {
     expect(lib.get("20260925-120000")).toMatchObject({ durationMs: 2000, hasAudio: true });
     expect(lib.get("20260925-130000")).toMatchObject({ durationMs: 99_000, hasAudio: false, appVersion: "0.9.0", imported: { at: "t", exportedWith: null, fileName: null } });
     expect(lib.get("20260925-140000").durationMs).toBe(4200);
+    // a desk recording: the longest of its own streams, and host/remote to its side do not count
+    const c = bare(root, "20260925-150000", { startedAt: "x", streams: ["ch1", "ch2", "ch3", "ch4"] });
+    writeFileSync(join(c, "ch1.wav"), Buffer.alloc(44 + 16_000));
+    writeFileSync(join(c, "ch4.wav"), Buffer.alloc(44 + 32_000));
+    writeFileSync(join(c, "host.wav"), Buffer.alloc(44 + 64_000));
+    expect(lib.get("20260925-150000")).toMatchObject({ durationMs: 1000, hasAudio: true });
   });
 
   test("cost: only call rows with a number count, by bucket", () => {

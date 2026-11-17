@@ -148,6 +148,18 @@ func buffer(rate: Double, n: Int, values: [Float], interleaved: Bool = false) ->
         #expect(c.levels[0]!.count == 1600 && c.levels[1]!.count == 1600)
     }
 
+    @Test func fourDeskChannelsAreIndependent() {
+        let sink = Collect()
+        let c = ClockLock(streams: [0, 1, 2, 3], sink: sink)
+        for s in UInt8(0)..<4 {
+            c.push(stream: s, samples: [Float](repeating: 0.1, count: 1600), hostTime: host(c, Double(s) * 50))
+        }
+        c.flush()
+        #expect((0..<4).allSatisfy { sink.samples(UInt8($0)).count == Int($0) * 800 + 1600 })
+        #expect(sink.frames.count == 8) // 1, 2, 2 and 3 whole-or-partial 100 ms frames
+        #expect(c.levels[3]!.count == 1600)
+    }
+
     @Test func flushTwiceEmitsNothingNew() {
         let sink = Collect()
         let c = ClockLock(streams: [0], sink: sink)

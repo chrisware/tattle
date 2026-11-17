@@ -1,6 +1,16 @@
 import { SAMPLE_RATE, readWav16k } from "./wav.ts";
 
-export type StreamName = "host" | "remote";
+/**
+ * A capture lane's name. The microphone-plus-call mode uses `host` and `remote`; a desk input's channels are named
+ * `ch1`..`chN`, one person on each, so nothing downstream needs to know who is on which channel.
+ */
+export type StreamName = string;
+/** The two streams of the microphone-plus-call mode, and of every recording made before desk inputs existed. */
+export const DEFAULT_STREAMS = ["host", "remote"] as const;
+/** The generic stream names of a desk input's `channels` channel: ch1, ch2, … */
+export function deskStreams(channels: number): StreamName[] {
+  return Array.from({ length: channels }, (_, i) => `ch${i + 1}`);
+}
 export const FRAME_SAMPLES = 512;
 
 export interface AudioFrame { samples: Float32Array; sessionMs: number }

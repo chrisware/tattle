@@ -43,9 +43,10 @@ import Testing
         #expect(j["uid"] as? String == "bh")
     }
 
-    @Test func deskRefusalNamesADeviceThatHasFewerThanTwoChannels() {
-        #expect(Devices.deskRefusal(channels: 1, name: "MacBook Pro Microphone") == "desk capture needs 2 input channels, MacBook Pro Microphone has 1")
-        #expect(Devices.deskRefusal(channels: 2, name: "BlackHole 2ch") == nil)
-        #expect(Devices.deskRefusal(channels: 16, name: "BlackHole 16ch") == nil)
+    @Test func deskRefusalNamesADeviceThatHasFewerChannelsThanAsked() {
+        #expect(Devices.deskRefusal(channels: 1, needed: 2, name: "MacBook Pro Microphone") == "desk capture needs 2 input channels, MacBook Pro Microphone has 1")
+        #expect(Devices.deskRefusal(channels: 3, needed: 4, name: "Desk 4ch") == "desk capture needs 4 input channels, Desk 4ch has 3")
+        #expect(Devices.deskRefusal(channels: 4, needed: 4, name: "Desk 4ch") == nil)
+        #expect(Devices.deskRefusal(channels: 16, needed: 2, name: "BlackHole 16ch") == nil)
     }
 }

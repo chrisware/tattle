@@ -236,6 +236,33 @@ describe("Session run lifecycle", () => {
     expect(invalid).toEqual([]);
   });
 
+  it("a multi-channel session records one WAV per stream and samples its memory", async () => {
+    const names = ["ch1", "ch2", "ch3", "ch4"];
+    const sources = names.map((n) => new SamplesSource(n, silence(1024)));
+    const { s, invalid } = makeSession({ sources, voices: Object.fromEntries(names.map((n) => [n, 1])) });
+    await s.run();
+    const j = JSON.parse(readFileSync(join(s.store.dir, "session.json"), "utf8"));
+    expect(j.streams).toEqual(names);
+    expect(j.voices).toMatchObject({ ch1: 1, ch2: 1, ch3: 1, ch4: 1 });
+    for (const n of names) expect(readWav16k(join(s.store.dir, `${n}.wav`))).toHaveLength(1024);
+    const mem = readFileSync(join(s.store.dir, "memory.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
+    expect(mem.length).toBeGreaterThanOrEqual(2); // start and end
+    expect(mem[0]).toMatchObject({ kind: "memory", streams: names });
+    for (const k of ["rss", "heapTotal", "heapUsed", "external", "arrayBuffers"]) expect(typeof mem[0][k]).toBe("number");
+    expect(invalid).toEqual([]);
+  });
+
+  it("speaker mode never mutes a desk channel: there is no call stream to gate against", async () => {
+    const names = ["ch1", "ch2", "ch3", "ch4"];
+    const { s, of } = makeSession({
+      sources: names.map((n) => new SamplesSource(n, constant(0.3, 512 * 4))),
+      voices: Object.fromEntries(names.map((n) => [n, 1])),
+    }, withEchoMode("always"));
+    await s.run();
+    for (const n of names) expect(readWav16k(join(s.store.dir, `${n}.wav`)).every((v) => v > 0.25)).toBe(true);
+    expect(of("echo.gate")).toEqual([{ active: true, device: null, atMs: 0 }]);
+  });
+
   it("emits echo.gate at the start when the gate is always on", async () => {
     const { s, of } = makeSession({ sources: [new SamplesSource("host", silence(512))] }, withEchoMode("always"));
     await s.run();

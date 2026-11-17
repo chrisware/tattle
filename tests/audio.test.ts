@@ -17,7 +17,7 @@ const cfg = loadConfig();
 
 async function runVad(sources: AudioSource[]): Promise<Utterance[]> {
   const ids = new UtteranceIds();
-  const vads = { host: new StreamVad("host", cfg.app.vad, ids), remote: new StreamVad("remote", cfg.app.vad, ids) };
+  const vads: Record<string, StreamVad> = { host: new StreamVad("host", cfg.app.vad, ids), remote: new StreamVad("remote", cfg.app.vad, ids) };
   const out: Utterance[] = [];
   for await (const f of mergeSources(sources, (s) => out.push(...vads[s].flush()))) out.push(...vads[f.stream].accept(f.samples, f.sessionMs));
   return out;

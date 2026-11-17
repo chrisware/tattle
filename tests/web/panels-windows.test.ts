@@ -194,8 +194,8 @@ describe("duplicate speaker suggestions", () => {
     await flush();
     expect(all(".sugg").map((s) => [s.className, s.querySelector(".sugg-names")!.textContent, s.querySelector(".sugg-conf")!.textContent, s.querySelector(".sugg-score")!.textContent, s.querySelector(".sugg-why")!.textContent]))
       .toEqual([
-        ["sugg c-high", "B-name→A-name", "High confidence", "voice match 87%", "Your mic: same voice."],
-        ["sugg c-low", "C-name→A-name", "Low confidence", "no voiceprint", "The call: too short."],
+        ["sugg c-high", "B-name→A-name", "High confidence", "voice match 87%", "Host: same voice."],
+        ["sugg c-low", "C-name→A-name", "Low confidence", "no voiceprint", "Call: too short."],
       ]);
   });
 

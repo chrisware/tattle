@@ -6,6 +6,7 @@ import { closeSync, existsSync, openSync, readFileSync, readSync } from "node:fs
 import { join } from "node:path";
 import type { StreamName } from "../audio/source.ts";
 import { SAMPLE_RATE } from "../audio/wav.ts";
+import { recordedStreams } from "../store/sessionStore.ts";
 import type { Embedder } from "./registry.ts";
 
 export interface Voiceprint {
@@ -82,7 +83,7 @@ const mmss = (ms: number) => `${Math.floor(ms / 60000)}:${String(Math.floor((ms 
  */
 export function suggestMerges(prints: Voiceprint[], limits: Partial<Record<StreamName, number>> = {}): MergeSuggestion[] {
   const out: MergeSuggestion[] = [];
-  for (const stream of ["host", "remote"] as StreamName[]) {
+  for (const stream of [...new Set(prints.flatMap((p) => p.streams))]) {
     type Group = { id: string; name: string; talkMs: number; lines: number; vectors: { c: Float32Array; w: number }[]; centroid: Float32Array | null };
     const groups: Group[] = prints.filter((p) => p.streams.includes(stream)).map((p) => ({
       id: p.id, name: p.name, talkMs: p.talkMs, lines: p.lines, vectors: p.centroid ? [{ c: p.centroid, w: Math.max(1, p.sampled) }] : [], centroid: p.centroid,
@@ -183,7 +184,7 @@ export async function recordedVoiceprints(
     if (!r.speaker_inferred && r.end_ms - r.start_ms >= 2000) e.clips.push(r);
   }
   const fds: Partial<Record<StreamName, number>> = {};
-  for (const s of ["host", "remote"] as StreamName[]) if (existsSync(join(dir, `${s}.wav`))) fds[s] = openSync(join(dir, `${s}.wav`), "r");
+  for (const s of recordedStreams(dir)) if (existsSync(join(dir, `${s}.wav`))) fds[s] = openSync(join(dir, `${s}.wav`), "r");
   try {
     const out: Voiceprint[] = [];
     for (const [id, e] of by) {

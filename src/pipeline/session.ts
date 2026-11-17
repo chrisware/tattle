@@ -17,6 +17,7 @@ import { FactChecker, type S2Api } from "../factcheck/s1.ts";
 import { Segmenter, type PipelineUtterance, type Segment } from "./segmenter.ts";
 import { Timeline } from "./timeline.ts";
 import { computeStats, type SessionStats } from "./stats.ts";
+import { MemorySampler } from "./memory.ts";
 import { EventBus, processSecrets, type EventType } from "../store/events.ts";
 import { SessionStore, type JsonlFile } from "../store/sessionStore.ts";
 import { appInfo } from "../version.ts";
@@ -138,6 +139,11 @@ export class Session {
   private readonly utterances: PipelineUtterance[] = [];
   private readonly processed = new Map<string, PipelineUtterance>();
   private readonly health = new Map<StreamName, StreamHealth>();
+  /** The stream carrying the call, in the microphone-plus-call mode; null for a desk input. */
+  private readonly callStream: StreamName | null;
+  /** The streams speaker mode may mute: the microphone, never a desk channel. */
+  private readonly gatedStreams: Set<StreamName>;
+  private readonly memory: MemorySampler;
   private readonly timers: NodeJS.Timeout[] = [];
   private stopRequested = false;
   private exportRows: unknown[] = [];
@@ -151,6 +157,13 @@ export class Session {
     const streams = opts.sources.map((s) => s.stream);
     if (streams.length === 0) throw new Error("at least one audio source is required");
     this.store = new SessionStore({ root: opts.sessionsDir, prefix: opts.sessionPrefix, streams, redact: processSecrets() });
+    // Speaker mode belongs to the microphone-plus-call pair: `remote` plays the call, `host` is the mic that hears it.
+    // A desk input's channels are isolated, so there is no call stream and nothing to mute.
+    this.callStream = streams.includes("remote") ? "remote" : null;
+    this.gatedStreams = new Set(streams.filter((s) => s === "host"));
+    this.memory = new MemorySampler(
+      (row) => this.store.append("memory", row), streams, () => this.lastMs,
+    );
 
     this.budget = new Budget({
       onExhausted: (e) => this.emit("budget.exhausted", { cap: e.cap, purpose: e.purpose, message: e.message, totals: e.totals }),
@@ -244,7 +257,12 @@ export class Session {
     return this.store.id;
   }
 
-  /** How many voices each stream carries in this session. */
+  /** The capture lanes this session reads. */
+  get streams(): StreamName[] {
+    return this.opts.sources.map((s) => s.stream);
+  }
+
+  /** How many voices each stream carries in this session: the config's limits, with the session's own on top. */
   get voices(): VoiceLimits {
     return { ...this.opts.config.app.speakers.voicesPerStream, ...(this.opts.voices ?? {}) };
   }
@@ -335,6 +353,7 @@ export class Session {
       features: this.features, transcription: this.transcription,
     });
     if (this.echoGate.active) this.emitEchoGate();
+    this.memory.start();
     this.timers.push(setInterval(() => this.emitHealth(), 1000));
     this.timers.push(setInterval(() => this.emitStats(), this.opts.statsIntervalMs ?? 60_000));
     this.timers.push(setInterval(() => void this.retryPending(), this.opts.retryEveryMs ?? RETRY_EVERY_MS));
@@ -348,8 +367,8 @@ export class Session {
         this.lastMs = Math.max(this.lastMs, f.sessionMs);
         if (this.paused) f = { ...f, samples: new Float32Array(f.samples.length) };
         // speaker mode: the stored host audio is what the pipeline heard, silence included
-        if (f.stream === "remote") this.echoGate.remote(f.samples, f.sessionMs);
-        else if (this.echoGate.active) f = { ...f, samples: this.echoGate.host(f.samples, f.sessionMs) };
+        if (this.callStream !== null && f.stream === this.callStream) this.echoGate.remote(f.samples, f.sessionMs);
+        else if (this.echoGate.active && this.gatedStreams.has(f.stream)) f = { ...f, samples: this.echoGate.host(f.samples, f.sessionMs) };
         this.store.writeAudio(f.stream, f.samples);
         const h = this.health.get(f.stream)!;
         h.lastFrameAt = Date.now();
@@ -515,7 +534,7 @@ export class Session {
       h.recent = [];
       h.utteranceTimes = h.utteranceTimes.filter((t) => now - t < 60_000);
       const db = rmsDbfs(all);
-      const muted = stream === "host" && this.echoGate.active ? { echoMutedMs: this.echoGate.takeMutedMs() } : {};
+      const muted = this.gatedStreams.has(stream) && this.echoGate.active ? { echoMutedMs: this.echoGate.takeMutedMs() } : {};
       this.emit("health", {
         stream, rmsDbfs: Number.isFinite(db) ? Math.round(db * 10) / 10 : -120,
         msSinceLastFrame: h.lastFrameAt ? now - h.lastFrameAt : -1, utterancesLastMinute: h.utteranceTimes.length, ...muted,
@@ -562,6 +581,7 @@ export class Session {
       writeFileSync(this.opts.exportBoundary, this.exportRows.map((r) => JSON.stringify(r)).join("\n") + (this.exportRows.length ? "\n" : ""));
     }
     this.status = "ended";
+    this.memory.stop(); // after everything else, so the last sample sees the ending's own memory
     this.emit("session.ended", { sessionId: this.id, reason, dir: this.store.dir });
     this.store.close();
   }

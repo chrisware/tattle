@@ -511,7 +511,7 @@ describe("AppleSpeech: the helper's lines", () => {
     expect(t.partials).toEqual([]);
   });
 
-  test("with live text, a line for an unknown stream or without runs is ignored; final runs show", async () => {
+  test("with live text, every stream gets partials; a line without runs is ignored; final runs show", async () => {
     const t = engine({ emitPartials: true });
     t.a.warm("host");
     const h = t.helpers[0];
@@ -519,7 +519,10 @@ describe("AppleSpeech: the helper's lines", () => {
     h.line({ type: "final", stream: "remote", runs: "nope" });
     h.line({ type: "final", stream: "remote", runs: [{ text: "Settled.", startMs: 0, endMs: 900 }] });
     await tick();
-    expect(t.partials).toEqual([{ stream: "remote", itemId: "apple-remote-0", text: "Settled.", utteranceId: null, final: false }]);
+    expect(t.partials).toEqual([
+      { stream: "tape", itemId: "apple-tape-0", text: "x", utteranceId: null, final: false },
+      { stream: "remote", itemId: "apple-remote-0", text: "Settled.", utteranceId: null, final: false },
+    ]);
   });
 
   test("a clip answered with neither text nor error, or with an error, fails as retryable; an unknown id is ignored", async () => {

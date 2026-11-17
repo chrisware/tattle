@@ -1,6 +1,8 @@
 import { appendFileSync, existsSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AppEvent } from "./events.ts";
+import { recordedStreams } from "./sessionStore.ts";
+import type { StreamName } from "../audio/source.ts";
 import { appPaths } from "../paths.ts";
 import { fromLegacy, fromLegacyEvent, isLegacySet } from "../labels/legacy.ts";
 import type { LabelSet } from "../labels/model.ts";
@@ -132,7 +134,7 @@ export class SessionLibrary {
       : [...recorded.names].filter(([id]) => !recorded.mergedInto.has(id)).map(([, n]) => n);
     let durationMs = 0;
     let hasAudio = false;
-    for (const s of ["host", "remote"]) {
+    for (const s of recordedStreams(dir)) {
       const p = join(dir, `${s}.wav`);
       if (existsSync(p)) { hasAudio = true; durationMs = Math.max(durationMs, ((statSync(p).size - 44) / 32_000) * 1000); }
     }
@@ -308,7 +310,7 @@ export class SessionLibrary {
   }
 
   /** A recording's folder and the voice limits it ran with (`voices` in session.json; absent before they existed). */
-  voicesOf(id: string): { dir: string; voices: Partial<Record<"host" | "remote", number>> | null } {
+  voicesOf(id: string): { dir: string; voices: Partial<Record<StreamName, number>> | null } {
     const dir = this.dirOf(id);
     return { dir, voices: readJson(join(dir, "session.json"))?.voices ?? null };
   }

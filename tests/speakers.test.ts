@@ -9,7 +9,7 @@ const cfg = loadConfig();
 
 async function fixtureUtterances(): Promise<Utterance[]> {
   const ids = new UtteranceIds();
-  const vads = { host: new StreamVad("host", cfg.app.vad, ids), remote: new StreamVad("remote", cfg.app.vad, ids) };
+  const vads: Record<string, StreamVad> = { host: new StreamVad("host", cfg.app.vad, ids), remote: new StreamVad("remote", cfg.app.vad, ids) };
   const out: Utterance[] = [];
   const sources = [new FileSource(`${FIXTURE_DIR}/host.wav`, "host", "max"), new FileSource(`${FIXTURE_DIR}/remote.wav`, "remote", "max")];
   for await (const f of mergeSources(sources, (s) => out.push(...vads[s].flush()))) out.push(...vads[f.stream].accept(f.samples, f.sessionMs));

@@ -348,7 +348,7 @@ export class AppleSpeech {
   }
 
   private liveText(stream: StreamName): LiveText | null {
-    if (!this.deps.emitPartials || (stream !== "host" && stream !== "remote")) return null;
+    if (!this.deps.emitPartials) return null;
     let lt = this.live.get(stream);
     if (!lt) {
       lt = new LiveText(stream, this.deps.onPartial);

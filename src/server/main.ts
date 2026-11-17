@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { extname, join, resolve, sep } from "node:path";
 import { parseArgs } from "node:util";
 import { DEFAULT_LABEL_SET, loadConfig, type Config } from "../config.ts";
-import { FileSource, type AudioSource, type Speed } from "../audio/source.ts";
+import { deskStreams, FileSource, type AudioSource, type Speed, type StreamName } from "../audio/source.ts";
 import { Session, type Features, type SessionOptions, type TranscriptionEngine } from "../pipeline/session.ts";
 import { listDevices, startNativeCapture } from "../audio/nativeSource.ts";
 import { LabelSetError, LabelSetStore, type LabelSetEntry } from "../labels/store.ts";
@@ -15,6 +15,7 @@ import type { DecisionProvider } from "../jev/types.ts";
 import { Budget, BudgetExhaustedError } from "../budget.ts";
 import { EventBus, processSecrets, type AppEvent } from "../store/events.ts";
 import { resolveRecorded, SessionLibrary } from "../store/library.ts";
+import { recordedStreams } from "../store/sessionStore.ts";
 import { Embedder } from "../speakers/registry.ts";
 import { recordedVoiceprints, suggestMerges, type MergeSuggestion } from "../speakers/suggest.ts";
 import { serveMixedAudio } from "./audio.ts";
@@ -125,7 +126,7 @@ export interface TranscriptionApi {
 interface StartCommon { name?: string; voices?: number; features?: Partial<Features>; labelSet?: string | null; stories?: string[] }
 export type StartRequest =
   | ({ mode: "replay"; dir?: string; sessionId?: string; speed?: Speed | "1" } & StartCommon)
-  | ({ mode: "live"; mic?: string; desk?: string } & StartCommon);
+  | ({ mode: "live"; mic?: string; desk?: string; channels?: number } & StartCommon);
 
 function parseStories(v: unknown): string[] {
   if (v === undefined || v === null) return [];
@@ -194,14 +195,14 @@ export interface EngineApi {
   labelSetApi?: LabelSetApi;
 }
 
-/** Replay sources for a fixture or a session folder: host.wav and/or remote.wav. */
+/** Replay sources for a fixture or a session folder: one WAV per stream it recorded (host/remote for older ones). */
 export function replaySources(dir: string, speed: Speed): AudioSource[] {
   const sources: AudioSource[] = [];
-  for (const stream of ["host", "remote"] as const) {
+  for (const stream of recordedStreams(dir)) {
     const p = join(dir, `${stream}.wav`);
     if (existsSync(p)) sources.push(new FileSource(p, stream, speed));
   }
-  if (sources.length === 0) throw new ApiError(400, `no host.wav or remote.wav in ${dir}`);
+  if (sources.length === 0) throw new ApiError(400, `no audio in ${dir}`);
   return sources;
 }
 
@@ -217,7 +218,7 @@ export interface EngineOptions {
   sessionsDir?: string;
   session?: Partial<SessionOptions>;
   /** Tier 2: starts the native capture helper. */
-  live?: (mic: string | undefined, onStatus: CaptureStatusHandler, desk?: string) => Promise<LiveCapture>;
+  live?: (mic: string | undefined, onStatus: CaptureStatusHandler, desk?: string, channels?: number) => Promise<LiveCapture>;
   devices?: () => Promise<unknown[]>;
   /** The chat window's network access (tests pass a fake). */
   fetch?: typeof fetch;
@@ -597,11 +598,14 @@ export class Engine implements EngineApi {
    * runs, or from a recording's audio (about 25 s for two hours). `remoteVoices` is how many people were on the call;
    * by default the number the session ran with.
    */
-  async speakerSuggestions(remoteVoices?: number): Promise<{ suggestions: MergeSuggestion[]; voices: { host: number; remote: number } }> {
+  async speakerSuggestions(remoteVoices?: number): Promise<{ suggestions: MergeSuggestion[]; voices: Partial<Record<StreamName, number>> }> {
     const cfgVoices = this.config.app.speakers.voicesPerStream;
+    // `remoteVoices` only applies to the call stream; a desk session has none
+    const withCall = (voices: Partial<Record<StreamName, number>>) =>
+      remoteVoices === undefined || voices.remote === undefined ? voices : { ...voices, remote: remoteVoices };
     if (this.session && !this.archived) {
       const run = this.session.voices;
-      const voices = { host: run.host ?? cfgVoices.host, remote: remoteVoices ?? run.remote ?? cfgVoices.remote };
+      const voices = withCall({ ...cfgVoices, ...run });
       // talk time per speaker, from the session's stats
       const talk = new Map(this.session.stats().speakers.map((s) => [s.speakerId, s.talkMs]));
       const prints = this.session.speakers.voiceprints().map((p) => ({ ...p, talkMs: talk.get(p.id) ?? 0 }));
@@ -610,7 +614,7 @@ export class Engine implements EngineApi {
     const id = this.archived;
     if (!id) throw new ApiError(409, "no session");
     const { dir, voices: ran } = this.libraryCall(() => this.library.voicesOf(id));
-    const voices = { host: ran?.host ?? cfgVoices.host, remote: remoteVoices ?? ran?.remote ?? cfgVoices.remote };
+    const voices = withCall({ ...cfgVoices, ...(ran ?? {}) });
     const sp = this.library.speakers(id);
     this.embedder ??= new Embedder();
     const prints = await recordedVoiceprints(dir, this.embedder, (x) => resolveRecorded(sp, x), sp.names);
@@ -682,6 +686,7 @@ export class Engine implements EngineApi {
     let mode: "replay" | "live";
     let liveText = false;
     let desk = "";
+    let deskChannels = 2;
     if (req?.mode === "replay") {
       const dir = req.sessionId ? this.libraryCall(() => this.library.dirOf(req.sessionId!)) : req.dir;
       if (typeof dir !== "string" || !dir) throw new ApiError(400, "dir or sessionId is required");
@@ -692,7 +697,14 @@ export class Engine implements EngineApi {
     } else if (req?.mode === "live") {
       desk = typeof req.desk === "string" ? req.desk.trim() : "";
       if (req.desk !== undefined && !desk) throw new ApiError(400, "desk needs a device id");
-      if (desk && req.mic) throw new ApiError(400, "choose a microphone or a two-channel input, not both");
+      if (desk && req.mic) throw new ApiError(400, "choose a microphone or a multi-channel input, not both");
+      if (!desk && req.channels !== undefined) throw new ApiError(400, "channels needs a multi-channel input");
+      if (req.channels !== undefined) {
+        if (!Number.isInteger(req.channels) || req.channels < 1 || req.channels > 16) {
+          throw new ApiError(400, "channels must be between 1 and 16");
+        }
+        deskChannels = req.channels;
+      }
       if (!this.opts.live) throw new ApiError(501, "live capture is not available");
       this.captureDetail = null;
       this.capture = await this.opts.live(desk ? undefined : req.mic, (type, data) => {
@@ -701,7 +713,7 @@ export class Engine implements EngineApi {
           this.captureDetail = (data.capture as Record<string, unknown>) ?? data;
           if (!desk) this.followOutput();
         }
-      }, desk || undefined);
+      }, desk || undefined, desk ? deskChannels : undefined);
       sources = this.capture.sources;
       mode = "live";
       liveText = true;
@@ -717,9 +729,9 @@ export class Engine implements EngineApi {
     this.session = new Session({
       mode, sources, config, bus: this.bus, sessionsDir: this.opts.sessionsDir,
       healthDetail: () => this.captureDetail, liveText, features, engine, labelSet, stories, decisionProvider: provider,
-      // a desk input is one person per channel; a call still takes the remote voice count (0 means no limit)
+      // every desk channel is one person; a call still takes the remote voice count (0 means no limit)
       ...(desk
-        ? { voices: { host: 1, remote: 1 } }
+        ? { voices: Object.fromEntries(deskStreams(deskChannels).map((s) => [s, 1])) }
         : Number.isInteger(req.voices) && req.voices! >= 0 ? { voices: { remote: req.voices } } : {}),
       ...this.opts.session,
       keys: {
@@ -1292,7 +1304,7 @@ export function bootEngine() {
   });
   engine = new Engine({
     config, transcription, decisionSettings: decisions,
-    live: (mic, onStatus, desk) => startNativeCapture({ mic: desk ? undefined : (mic === "builtin" ? undefined : mic), desk, onStatus }),
+    live: (mic, onStatus, desk, channels) => startNativeCapture({ mic: desk ? undefined : (mic === "builtin" ? undefined : mic), desk, channels, onStatus }),
     devices: () => listDevices(),
   });
   return { keys, config, engine, transcription, ready, server: createApiServer(engine, { setup, ready }) };

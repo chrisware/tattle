@@ -487,7 +487,7 @@ describe("the speaker window (a click on a name)", () => {
 
   test("says who, how many lines, how long they talked, and on which streams", () => {
     opened();
-    expect([dlg().open, el("#h-speaker").textContent, el("#speaker-sub").textContent]).toEqual([true, "Ann", "2 lines · 0:05 talking · on your mic and the call"]);
+    expect([dlg().open, el("#h-speaker").textContent, el("#speaker-sub").textContent]).toEqual([true, "Ann", "2 lines · 0:05 talking · on Host and Call"]);
     expect(input().value).toBe("Ann");
     expect(selects().map((s) => [...s.options].map((o) => o.textContent))).toEqual([["Choose a speaker…", "Bob"], ["Choose a speaker…", "Bob"]]);
   });
@@ -496,7 +496,7 @@ describe("the speaker window (a click on a name)", () => {
     const st = feed(S, [["speaker.created", { id: "A", displayName: "Ann" }], ["utterance", utt("u1", 0, 2_000, "A")]], snapshot());
     P.renderTranscript(st);
     el<HTMLButtonElement>("#utt-u1 .who-tab").click();
-    expect(el("#speaker-sub").textContent).toBe("1 line · 0:02 talking · on your mic");
+    expect(el("#speaker-sub").textContent).toBe("1 line · 0:02 talking · on Host");
     expect(el("#speaker-body p.note").textContent).toBe("No other speaker to merge with.");
   });
 

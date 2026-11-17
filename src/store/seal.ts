@@ -7,13 +7,14 @@ import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, sig
 import { createReadStream, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { appSupportDir } from "../paths.ts";
+import { recordedStreams } from "./sessionStore.ts";
 import type { TimestampFailure, TimestampToken } from "./timestamp.ts";
 
 export const SEAL_FILE = "seal.json";
 /** The transcript as it was when sealed: one line per utterance, never rewritten afterwards. */
 export const TRANSCRIPT_FILE = "transcript.jsonl";
 /** What a seal covers, when present. Not events.jsonl, speakers.json or meta.json: renames and chats change them later. */
-const SEALED_FILES = ["host.wav", "remote.wav", TRANSCRIPT_FILE, "utterances.jsonl", "transcriptions.jsonl"];
+const SEALED_FILES = [TRANSCRIPT_FILE, "utterances.jsonl", "transcriptions.jsonl"];
 
 /** tests override it */
 export function signingKeyPath(env: NodeJS.ProcessEnv = process.env): string {
@@ -173,7 +174,7 @@ export async function sealRecording(dir: string, opts: SealOptions & { when: Sea
   const session = readJson(join(dir, "session.json")) ?? {};
   writeFileSync(join(dir, TRANSCRIPT_FILE), transcriptLines(dir).map((l) => JSON.stringify(l) + "\n").join(""));
   const files: SealPayload["files"] = [];
-  for (const name of SEALED_FILES) {
+  for (const name of [...recordedStreams(dir).map((s) => `${s}.wav`), ...SEALED_FILES]) {
     const p = join(dir, name);
     if (existsSync(p)) files.push({ name, bytes: statSync(p).size, sha256: await sha256File(p) });
   }

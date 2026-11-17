@@ -14,7 +14,7 @@ export async function speakerCounts(host: string | undefined, remote: string | u
   const sources: AudioSource[] = [];
   if (host) sources.push(new FileSource(host, "host", "max"));
   if (remote) sources.push(new FileSource(remote, "remote", "max"));
-  const vads = { host: new StreamVad("host", cfg.app.vad, ids), remote: new StreamVad("remote", cfg.app.vad, ids) };
+  const vads: Record<string, StreamVad> = { host: new StreamVad("host", cfg.app.vad, ids), remote: new StreamVad("remote", cfg.app.vad, ids) };
   const utts: Utterance[] = [];
   for await (const f of mergeSources(sources, (s) => utts.push(...vads[s].flush()))) utts.push(...vads[f.stream].accept(f.samples, f.sessionMs));
   utts.sort((a, b) => a.startMs - b.startMs);

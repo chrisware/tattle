@@ -5,6 +5,7 @@ import { closeSync, existsSync, openSync, readSync, statSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { join } from "node:path";
 import { SAMPLE_RATE, wavHeader } from "../audio/wav.ts";
+import { recordedStreams } from "../store/sessionStore.ts";
 
 const HEADER = 44;
 const CHUNK = 64 * 1024; // bytes of PCM per read, per stream
@@ -59,7 +60,7 @@ export function limit(x: number): number {
 
 /** Serves the mixed, loudness-matched audio of a session folder; 404 when it has no audio. */
 export function serveMixedAudio(dir: string, req: IncomingMessage, res: ServerResponse): void {
-  const files = ["host.wav", "remote.wav"].map((f) => join(dir, f)).filter((p) => existsSync(p));
+  const files = recordedStreams(dir).map((s) => join(dir, `${s}.wav`)).filter((p) => existsSync(p));
   if (files.length === 0) {
     res.writeHead(404, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: "this recording has no audio" }));

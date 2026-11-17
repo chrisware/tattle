@@ -19,6 +19,13 @@ describe("helper frame parser", () => {
     }
   });
 
+  test("names streams from the stream count: a desk input's channels are ch1..chN", () => {
+    const bytes = Buffer.concat([0, 1, 2, 3].map((i) => frameBytes(i, i * 100, ramp(1600))));
+    const p = new FrameParser(["ch1", "ch2", "ch3", "ch4"]);
+    expect(p.push(bytes).map((f) => f.stream)).toEqual(["ch1", "ch2", "ch3", "ch4"]);
+    expect(() => new FrameParser(["ch1"]).push(frameBytes(1, 0, ramp(16)))).toThrow(/stream 1/);
+  });
+
   test("rejects bad magic and impossible counts", () => {
     const bad = frameBytes(0, 0, [1, 2]);
     bad.write("XCAP", 0, "ascii");
@@ -309,21 +316,33 @@ describe("native capture adapter, more (fake helper)", () => {
     }
   });
 
-  test("desk capture spawns --desk and both streams, ignoring mic flags", async () => {
-    const { cap, spawned } = await capture({ desk: "BlackHole2ch_UID", mic: "USB", host: false, remote: false });
-    expect(spawned).toEqual([["--desk", "BlackHole2ch_UID"]]);
-    expect(cap.sources.map((s) => s.stream)).toEqual(["host", "remote"]);
+  test("desk capture spawns --desk with its channel count and exposes ch1..chN, ignoring mic flags", async () => {
+    const { cap, spawned } = await capture({ desk: "Desk_UID", channels: 4, mic: "USB", host: false, remote: false });
+    expect(spawned).toEqual([["--desk", "Desk_UID", "--channels", "4"]]);
+    expect(cap.sources.map((s) => s.stream)).toEqual(["ch1", "ch2", "ch3", "ch4"]);
     await cap.stop();
+  });
+
+  test("a desk capture defaults to two channels, and a non-desk capture ignores channels", async () => {
+    const two = await capture({ desk: "Desk_UID" });
+    expect(two.spawned).toEqual([["--desk", "Desk_UID", "--channels", "2"]]);
+    expect(two.cap.sources.map((s) => s.stream)).toEqual(["ch1", "ch2"]);
+    await two.cap.stop();
+    const mic = await capture({ mic: "USB", channels: 4 });
+    expect(mic.spawned).toEqual([["--mic", "USB"]]);
+    expect(mic.cap.sources.map((s) => s.stream)).toEqual(["host", "remote"]);
+    await mic.cap.stop();
   });
 
   test("host:false exposes only the remote source and drops host frames", async () => {
     const { cap, helpers } = await capture({ host: false });
     expect(cap.sources.map((s) => s.stream)).toEqual(["remote"]);
     helpers[0].started(0);
-    helpers[0].stdout.write(frameBytes(0, 0, ramp(512)));
-    helpers[0].stdout.write(frameBytes(1, 0, ramp(512)));
+    helpers[0].stdout.write(frameBytes(0, 0, ramp(512))); // the microphone, off: not this stream
+    helpers[0].stdout.write(frameBytes(1, 0, ramp(512, 1500))); // the helper's fixed stream 1, whoever the sources are
     const [f] = await take(cap.sources[0], 1);
     expect(f.sessionMs).toBe(0);
+    expect(f.samples[0]).toBeCloseTo(500 / 32767);
     await cap.stop();
     expect(await all(cap.sources[0])).toEqual([]);
   });

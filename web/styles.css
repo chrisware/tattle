@@ -145,7 +145,7 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; line-height:
 /* on air: Start live and Replay only apply to starting a session */
 .top.on-air #start-live, .top.on-air #replay-btn { display: none; }
 
-.health { display: flex; gap: 12px; align-items: center; }
+.health { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }
 .meter { width: 136px; display: grid; gap: 3px; }
 .meter .row1 { display: flex; gap: 6px; align-items: baseline; font-size: 11.5px; min-width: 0; }
 .meter .who { font: 700 12px/1 var(--cond); letter-spacing: 0.12em; text-transform: uppercase; }
@@ -158,7 +158,6 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; line-height:
 .meter .meta { font-size: 11.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .meter.alert .who, .meter.alert .meta { color: var(--live); }
 .meter.alert .bar { box-shadow: 0 0 0 1px var(--live); }
-.meter.absent { opacity: 0.4; }
 .meter.paused { opacity: 0.45; }
 .meter.paused .meta { color: var(--warn); }
 .meter.muted .meta { color: var(--warn); }

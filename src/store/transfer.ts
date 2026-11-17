@@ -4,7 +4,8 @@ import { mkdir, mkdtemp, open, readFile, rename, rm, writeFile } from "node:fs/p
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { JSONL_FILES, timestampId } from "./sessionStore.ts";
+import { JSONL_FILES, recordedStreams, timestampId } from "./sessionStore.ts";
+import { DEFAULT_STREAMS } from "../audio/source.ts";
 import { SEAL_FILE, TRANSCRIPT_FILE } from "./seal.ts";
 import { extractStoredEntry, readZipEntries, readZipEntry, writeZip, ZipError, type ZipInput } from "./zip.ts";
 import { wavHeader } from "../audio/wav.ts";
@@ -33,7 +34,6 @@ const run = (bin: string, args: string[]) => execFileP(bin, args, { env: childEn
  * travel byte for byte, so the importer can check them (docs/recordings.md § Proof of a recording).
  */
 const DATA_FILES = ["session.json", "meta.json", "speakers.json", ...JSONL_FILES.map((f) => `${f}.jsonl`), SEAL_FILE, TRANSCRIPT_FILE];
-const STREAMS = ["host", "remote"] as const;
 // Imports come from other people, so every size in them is a claim to check. A two-hour show's data files weigh about
 // 3 MB in all; these limits leave ample room while stopping a small file from filling the disk.
 const MAX_DATA_BYTES = 256 * 1024 * 1024; // any one data file
@@ -75,7 +75,7 @@ export function exportFileName(name: string | null, id: string): string {
 
 /** What each audio choice would weigh, for the export window. */
 export function exportEstimate(dir: string): { bytes: Record<AudioChoice, number>; chats: number; hasAudio: boolean } {
-  const wavs = STREAMS.map((s) => join(dir, `${s}.wav`)).filter((p) => existsSync(p));
+  const wavs = recordedStreams(dir).map((s) => join(dir, `${s}.wav`)).filter((p) => existsSync(p));
   const data = DATA_FILES.reduce((t, f) => t + (existsSync(join(dir, f)) ? statSync(join(dir, f)).size : 0), 0);
   const seconds = wavs.reduce((t, p) => t + samplesOf(p) / 16_000, 0);
   // JSON lines deflate to about a fifth
@@ -112,7 +112,7 @@ export async function exportRecording(
       files.push(`data/${f}`);
     }
     const streams: Manifest["audio"]["streams"] = [];
-    const wavs = STREAMS.filter((s) => existsSync(join(dir, `${s}.wav`)));
+    const wavs = recordedStreams(dir).filter((s) => existsSync(join(dir, `${s}.wav`)));
     for (const s of opts.audio === "none" ? [] : wavs) {
       const wav = join(dir, `${s}.wav`);
       streams.push({ stream: s, samples: samplesOf(wav) });
@@ -268,9 +268,14 @@ export async function importRecording(
       await writeFile(events, text);
     }
     for (const f of JSONL_FILES) if (!existsSync(join(work, `${f}.jsonl`))) await writeFile(join(work, `${f}.jsonl`), "");
-    for (const s of STREAMS) {
-      const declared = manifest.audio?.streams?.find((x) => x.stream === s)?.samples;
-      const samples = Number.isSafeInteger(declared) && (declared as number) >= 0 ? (declared as number) : null;
+    const declaredStreams = (manifest.audio?.streams ?? []).map((x) => x.stream).filter((x): x is string => typeof x === "string");
+    const namedStreams = Array.isArray(session.streams) ? session.streams.filter((x: unknown): x is string => typeof x === "string") : [];
+    const audioStreams = [...new Set([...declaredStreams, ...namedStreams])];
+    const streams = audioStreams.length ? audioStreams : [...DEFAULT_STREAMS];
+    if (streams.some((s) => !SAFE_ID.test(s))) throw new TransferError(400, "the recording names an audio stream invalidly");
+    for (const s of streams) {
+      const sampleCount = manifest.audio?.streams?.find((x) => x.stream === s)?.samples;
+      const samples = Number.isSafeInteger(sampleCount) && (sampleCount as number) >= 0 ? (sampleCount as number) : null;
       const wav = byName.get(`audio/${s}.wav`);
       const m4a = byName.get(`audio/${s}.m4a`);
       if (wav) {
@@ -287,6 +292,11 @@ export async function importRecording(
         await rm(join(work, `${s}.m4a`));
         await rm(join(work, `${s}.decoded.wav`));
       }
+    }
+    // a recording from before streams were a list, or one whose session.json lost it: name the streams its audio has
+    if (!Array.isArray(session.streams) || session.streams.length === 0) {
+      const current = readJson(join(work, "session.json")) ?? session;
+      await writeFile(join(work, "session.json"), JSON.stringify({ ...current, streams }, null, 2) + "\n");
     }
     // where it came from; the development budget skips folders that have this file (their spend was someone else's)
     await writeFile(join(work, "imported.json"), JSON.stringify({

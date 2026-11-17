@@ -202,7 +202,7 @@ export async function exportTranscript(dir: string, id: string, opts: Transcript
     "",
     "3. The recording's files. Export the recording from Tattle with its original audio",
     "   (Export, Original audio), unzip the .tattle file, and compare the output of",
-    "     shasum -a 256 audio/host.wav audio/remote.wav data/transcript.jsonl data/utterances.jsonl data/transcriptions.jsonl",
+    "     shasum -a 256 audio/*.wav data/transcript.jsonl data/utterances.jsonl data/transcriptions.jsonl",
     "   with the fingerprints in seal.json (step 2) and above.",
     "",
     "4. A timestamp, here DigiCert's (the same for the others). For the seal:",

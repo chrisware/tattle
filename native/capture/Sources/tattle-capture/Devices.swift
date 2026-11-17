@@ -132,9 +132,9 @@ enum Devices {
         ["uid": d.uid, "name": d.name, "transport": d.transport, "isDefault": d.isDefault, "channels": d.channels]
     }
 
-    /// Nil when a device can feed a two-channel desk capture. The message names the device and the count it has.
-    static func deskRefusal(channels: Int, name: String) -> String? {
-        channels >= 2 ? nil : "desk capture needs 2 input channels, \(name) has \(channels)"
+    /// Nil when a device has at least `needed` input channels. The message names the device and the count it has.
+    static func deskRefusal(channels: Int, needed: Int, name: String) -> String? {
+        channels >= needed ? nil : "desk capture needs \(needed) input channels, \(name) has \(channels)"
     }
 
     static func inputs() -> [Input] {

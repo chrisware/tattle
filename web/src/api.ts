@@ -29,7 +29,7 @@ export interface SessionSummary {
 }
 
 export interface MergeSuggestion {
-  fromId: string; fromName: string; fromTalkMs: number; intoId: string; intoName: string; intoTalkMs: number; stream: "host" | "remote";
+  fromId: string; fromName: string; fromTalkMs: number; intoId: string; intoName: string; intoTalkMs: number; stream: string;
   similarity: number | null; confidence: "high" | "medium" | "low"; reason: string;
 }
 
@@ -197,11 +197,11 @@ export const api = {
     call<{ sessionId: string }>("POST", "/api/session/start", { mode: "replay", dir, speed, voices, features, ...labelling }),
   startLive: (mic?: string, voices?: number, features?: Features, labelling: Labelling = {}) =>
     call<{ sessionId: string }>("POST", "/api/session/start", { mode: "live", ...(mic ? { mic } : {}), voices, features, ...labelling }),
-  startDesk: (desk: string, features?: Features, labelling: Labelling = {}) =>
-    call<{ sessionId: string }>("POST", "/api/session/start", { mode: "live", desk, features, ...labelling }),
+  startDesk: (desk: string, channels: number, features?: Features, labelling: Labelling = {}) =>
+    call<{ sessionId: string }>("POST", "/api/session/start", { mode: "live", desk, channels, features, ...labelling }),
   stop: () => call<{ sessionId: string }>("POST", "/api/session/stop"),
   rename: (id: string, displayName: string) => call("POST", `/api/speakers/${encodeURIComponent(id)}/rename`, { displayName }),
-  suggestMerges: (voices?: number) => call<{ suggestions: MergeSuggestion[]; voices: { host: number; remote: number } }>(
+  suggestMerges: (voices?: number) => call<{ suggestions: MergeSuggestion[]; voices: Record<string, number> }>(
     "GET", `/api/speakers/suggestions${voices === undefined ? "" : `?voices=${voices}`}`),
   merge: (fromId: string, intoId: string) => call("POST", "/api/speakers/merge", { fromId, intoId }),
   relabel: () => call<{ segments: number }>("POST", "/api/labels/relabel"),

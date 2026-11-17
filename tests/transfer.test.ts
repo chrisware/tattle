@@ -89,6 +89,23 @@ describe("export and import", () => {
     expect(s.durationMs).toBe(3000); // from the manifest
   });
 
+  test("a multi-channel recording exports and imports every stream it recorded", async () => {
+    const dir = recording(mkdtempSync(join(tmpdir(), "src-")));
+    const dest = mkdtempSync(join(tmpdir(), "dest-"));
+    const names = ["ch1", "ch2", "ch3", "ch4"];
+    writeFileSync(join(dir, "session.json"), JSON.stringify({ id: "20260925-120000", mode: "live", startedAt: "2026-09-25T12:00:00Z", streams: names }));
+    for (const n of names) {
+      const pcm = Buffer.alloc(160 * 2, 1);
+      writeFileSync(join(dir, `${n}.wav`), Buffer.concat([wavHeader(pcm.length, 16_000), pcm]));
+    }
+    const out = await exportRecording(dir, "20260925-120000", { audio: "original", chats: false, app: { name: "p", version: "0.3.0" } });
+    const { id, manifest } = await importRecording(out.path, dest, null);
+    expect(manifest.audio.streams.map((s) => s.stream)).toEqual(names);
+    for (const n of names) expect(existsSync(join(dest, id, `${n}.wav`))).toBe(true);
+    expect(JSON.parse(readFileSync(join(dest, id, "session.json"), "utf8")).streams).toEqual(names);
+    expect(existsSync(join(dest, id, "host.wav"))).toBe(false); // not one of its streams
+  });
+
   test("the same recording again can be imported as a named copy, from the same upload", async () => {
     const root = mkdtempSync(join(tmpdir(), "lib-"));
     const dir = recording(root);
@@ -209,6 +226,27 @@ describe("export and import, case by case", () => {
     { name: "data/session.json", data: Buffer.from(typeof session === "string" ? session : JSON.stringify(session)) },
     { name: "data/events.jsonl", data: Buffer.from(events + "\n") },
   ];
+  test("an import that names an unsafe audio stream is refused", async () => {
+    const dest = tmpDir("dest-");
+    const file = await tattle({
+      audio: { choice: "none", format: null, bitrate: null, streams: [{ stream: "../x", samples: 0 }] },
+    }, data());
+    await expect(importRecording(file, dest, null)).rejects.toMatchObject({ status: 400, message: "the recording names an audio stream invalidly" });
+    expect(readdirSync(dest)).toEqual([]);
+  });
+
+  test("an import whose session.json has no streams records the streams its audio has", async () => {
+    const dest = tmpDir("dest-");
+    const work = tmpDir("wav-");
+    const file = await tattle(
+      { audio: { choice: "original", format: "wav", bitrate: null, streams: [{ stream: "ch1", samples: 160 }] } },
+      [...data(), wavEntry(work, "audio/ch1.wav", { samples: 160 })],
+    );
+    const { id } = await importRecording(file, dest, null);
+    expect(JSON.parse(readFileSync(join(dest, id, "session.json"), "utf8")).streams).toEqual(["ch1"]);
+    expect(existsSync(join(dest, id, "ch1.wav"))).toBe(true);
+  });
+
   /** A stored WAV entry: a canonical header (rate and channels as given) and `samples` of PCM, or custom bytes. */
   function wavEntry(dir: string, name: string, o: { rate?: number; channels?: number; samples?: number; bytes?: Buffer }): ZipInput {
     const p = join(dir, name.replace("/", "-"));

@@ -1,13 +1,30 @@
-import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { StreamName } from "../audio/source.ts";
+import { DEFAULT_STREAMS, type StreamName } from "../audio/source.ts";
 import { WavWriter } from "../audio/wav.ts";
 import { appPaths } from "../paths.ts";
 
 export const JSONL_FILES = [
-  "utterances", "transcriptions", "jev_calls", "s2_calls", "segments", "labels", "claims", "verdicts", "s1_versions", "audits", "events",
+  "utterances", "transcriptions", "jev_calls", "s2_calls", "segments", "labels", "claims", "verdicts", "s1_versions", "audits",
+  "events", "memory",
 ] as const;
 export type JsonlFile = (typeof JSONL_FILES)[number];
+
+const SAFE_STREAM = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+
+/**
+ * The streams a recording folder has, from its session.json. Recordings made before streams were a list, and folders
+ * without one, read as the microphone-plus-call pair. Unsafe names never become file paths.
+ */
+export function recordedStreams(dir: string): StreamName[] {
+  try {
+    const s = JSON.parse(readFileSync(join(dir, "session.json"), "utf8"));
+    if (Array.isArray(s?.streams) && s.streams.length > 0 && s.streams.every((x: unknown) => typeof x === "string" && SAFE_STREAM.test(x))) {
+      return s.streams as string[];
+    }
+  } catch { /* no session.json, or unreadable: the pair old recordings used */ }
+  return [...DEFAULT_STREAMS];
+}
 
 export function timestampId(d = new Date()): string {
   const p = (n: number) => String(n).padStart(2, "0");

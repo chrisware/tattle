@@ -1,7 +1,7 @@
 import { spawn as nodeSpawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
 import type { Readable, Writable } from "node:stream";
-import { FRAME_SAMPLES, type AudioFrame, type AudioSource, type StreamName } from "./source.ts";
+import { DEFAULT_STREAMS, deskStreams, FRAME_SAMPLES, type AudioFrame, type AudioSource, type StreamName } from "./source.ts";
 import { appPaths } from "../paths.ts";
 import { childEnv } from "../keys.ts";
 
@@ -16,20 +16,27 @@ export class MalformedFrameError extends Error {}
 export class FrameParser {
   private buf: Buffer = Buffer.alloc(0);
 
+  /**
+   * `names[index]` names the helper's stream byte: host/remote by default, ch1..chN for a desk input. A hole means that
+   * stream was not asked for (the helper keeps its fixed indices: 0 the microphone, 1 the system tap, even alone).
+   */
+  constructor(private readonly names: readonly (StreamName | undefined)[] = DEFAULT_STREAMS) {}
+
   push(chunk: Buffer): HelperFrame[] {
     this.buf = this.buf.length ? Buffer.concat([this.buf, chunk]) : chunk;
     const out: HelperFrame[] = [];
     while (this.buf.length >= HEADER) {
       if (this.buf.toString("ascii", 0, 4) !== "PCAP") throw new MalformedFrameError("bad magic");
       const s = this.buf[4];
-      if (s !== 0 && s !== 1) throw new MalformedFrameError(`bad stream ${s}`);
+      if (s >= this.names.length) throw new MalformedFrameError(`bad stream ${s}: only ${this.names.length} stream${this.names.length === 1 ? "" : "s"} expected`);
+      const name = this.names[s]; // undefined: that stream was not asked for, so its frames are parsed and dropped
       const sessionMs = this.buf.readDoubleLE(8);
       const n = this.buf.readUInt32LE(16);
       if (n === 0 || n > MAX_SAMPLES || !Number.isFinite(sessionMs) || sessionMs < 0) throw new MalformedFrameError(`impossible frame (n ${n}, sessionMs ${sessionMs})`);
       if (this.buf.length < HEADER + 2 * n) break;
       const samples = new Int16Array(n);
       for (let i = 0; i < n; i++) samples[i] = this.buf.readInt16LE(HEADER + 2 * i);
-      out.push({ stream: s === 0 ? "host" : "remote", sessionMs, samples });
+      if (name !== undefined) out.push({ stream: name, sessionMs, samples });
       this.buf = this.buf.subarray(HEADER + 2 * n);
     }
     return out;
@@ -101,8 +108,13 @@ export type CaptureStatus = { type: string; [k: string]: unknown };
 
 export interface NativeCaptureOptions {
   mic?: string;
-  /** A multi-channel input. Channel 0 is host, channel 1 is remote. Mutually exclusive with the microphone flags. */
+  /**
+   * A multi-channel input. Its channels are captured as separate `ch1`..`chN` streams, one person on each.
+   * Mutually exclusive with the microphone flags. `channels` says how many (2 by default).
+   */
   desk?: string;
+  /** A desk input's channel count, 1–16; 2 when absent. Ignored without `desk`. */
+  channels?: number;
   host?: boolean;
   remote?: boolean;
   bin?: string;
@@ -136,11 +148,13 @@ export function startNativeCapture(opts: NativeCaptureOptions = {}): Promise<Nat
   const maxRestarts = opts.maxRestarts ?? 3;
   const restartDelayMs = opts.restartDelayMs ?? 1000;
   const streams = new Map<StreamName, LiveStream>();
+  const channels = desk ? Math.max(1, Math.trunc(opts.channels ?? 2)) : 0;
+  // the helper's stream indices are fixed even when a source is off: 0 is the microphone, 1 the system tap
+  const names: (StreamName | undefined)[] = desk ? deskStreams(channels) : [useHost ? "host" : undefined, useRemote ? "remote" : undefined];
   const args = desk
-    ? ["--desk", desk]
+    ? ["--desk", desk, "--channels", String(channels)]
     : [...(opts.mic ? ["--mic", opts.mic] : []), ...(useHost ? [] : ["--no-mic"]), ...(useRemote ? [] : ["--no-system"])];
-  if (desk || useHost) streams.set("host", new LiveStream("host"));
-  if (desk || useRemote) streams.set("remote", new LiveStream("remote"));
+  for (const name of names) if (name !== undefined) streams.set(name, new LiveStream(name));
 
   let child: HelperProcess | null = null;
   let stopping = false;
@@ -158,7 +172,7 @@ export function startNativeCapture(opts: NativeCaptureOptions = {}): Promise<Nat
   const launch = () => {
     const proc = spawn(bin, args);
     child = proc;
-    const parser = new FrameParser();
+    const parser = new FrameParser(names);
     let offsetMs: number | null = null;
     let held: HelperFrame[] = [];
     let errBuf = "";

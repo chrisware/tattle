@@ -51,7 +51,7 @@ function fakeLive(log: string[] = [], lead?: Float32Array<ArrayBufferLike>) {
   const src = new Endless("host", lead);
   const live = {
     log, src, mic: undefined as string | undefined, status: null as null | ((type: "error" | "health", data: Record<string, unknown>) => void),
-    capture: async (mic: string | undefined, onStatus: (type: "error" | "health", data: Record<string, unknown>) => void): Promise<LiveCapture> => {
+    capture: async (mic: string | undefined, onStatus: (type: "error" | "health", data: Record<string, unknown>) => void, _desk?: string, _channels?: number): Promise<LiveCapture> => {
       live.mic = mic;
       live.status = onStatus;
       return { sources: [src], stop: async () => { log.push("capture stopped"); src.stopped = true; } };
@@ -112,7 +112,7 @@ describe("Engine.start", () => {
     await refused(undefined, 400, "mode must be replay or live");
     await refused({ mode: "replay" }, 400, "dir or sessionId is required");
     await refused({ mode: "replay", dir: "" }, 400, "dir or sessionId is required");
-    await refused({ mode: "replay", dir: tmpDir("empty-") }, 400, /^no host.wav or remote.wav in /);
+    await refused({ mode: "replay", dir: tmpDir("empty-") }, 400, /^no audio in /);
     await refused({ mode: "replay", sessionId: "20990101-000000" }, 404, "unknown session 20990101-000000");
     await refused({ mode: "replay", sessionId: "../etc" }, 404, "invalid session id ../etc");
     await refused({ mode: "live" }, 501, "live capture is not available");
@@ -269,20 +269,26 @@ describe("Engine.start", () => {
     await end(engine, live);
   });
 
-  test("a desk start opens that device as both streams, one voice each, and never follows the speakers", async () => {
+  test("a desk start opens that device as ch1..chN, one voice each, and never follows the speakers", async () => {
     const live = fakeLive();
+    const deskSources = ["ch1", "ch2", "ch3", "ch4"].map((n) => new Endless(n));
     let desk: string | undefined;
-    const capture = async (mic: string | undefined, onStatus: (type: "error" | "health", data: Record<string, unknown>) => void, d?: string) => {
+    let channels: number | undefined;
+    const capture = async (mic: string | undefined, onStatus: (type: "error" | "health", data: Record<string, unknown>) => void, d?: string, c?: number) => {
       desk = d;
-      return live.capture(mic, onStatus);
+      channels = c;
+      await live.capture(mic, onStatus);
+      return { sources: deskSources, stop: async () => { for (const s of deskSources) s.stopped = true; } };
     };
     const config = loadConfig();
     config.app.echoGate.mode = "always";
     const { engine } = offlineEngine({ config, live: capture });
-    await engine.start({ mode: "live", desk: "BlackHole2ch_UID", voices: 4, features: OFF });
-    expect(desk).toBe("BlackHole2ch_UID");
+    await engine.start({ mode: "live", desk: "Desk_UID", channels: 4, voices: 4, features: OFF });
+    expect(desk).toBe("Desk_UID");
+    expect(channels).toBe(4);
     expect(live.mic).toBeUndefined();
-    expect(engine.current!.voices).toEqual({ host: 1, remote: 1 });
+    expect(engine.current!.streams).toEqual(["ch1", "ch2", "ch3", "ch4"]);
+    expect(engine.current!.voices).toMatchObject({ ch1: 1, ch2: 1, ch3: 1, ch4: 1 });
     expect(engine.current!.echoGate.active).toBe(false);
     engine.current!.setOutput("speakers", "MacBook Speakers");
     live.status!("health", { capture: { remote: { outputKind: "speakers", outputDevice: "MacBook Speakers" } } });
@@ -293,8 +299,11 @@ describe("Engine.start", () => {
   test("desk and a microphone together are refused, and a blank desk id is refused", async () => {
     let called = 0;
     const { engine } = offlineEngine({ live: async () => { called++; return { sources: [new Endless("host")], stop: async () => {} }; } });
-    await expect(engine.start({ mode: "live", mic: "x", desk: "y", features: OFF })).rejects.toMatchObject({ status: 400, message: "choose a microphone or a two-channel input, not both" });
+    await expect(engine.start({ mode: "live", mic: "x", desk: "y", features: OFF })).rejects.toMatchObject({ status: 400, message: "choose a microphone or a multi-channel input, not both" });
     await expect(engine.start({ mode: "live", desk: "  ", features: OFF })).rejects.toMatchObject({ status: 400, message: "desk needs a device id" });
+    await expect(engine.start({ mode: "live", channels: 4, features: OFF })).rejects.toMatchObject({ status: 400, message: "channels needs a multi-channel input" });
+    await expect(engine.start({ mode: "live", desk: "y", channels: 0, features: OFF })).rejects.toMatchObject({ status: 400, message: "channels must be between 1 and 16" });
+    await expect(engine.start({ mode: "live", desk: "y", channels: 17, features: OFF })).rejects.toMatchObject({ status: 400, message: "channels must be between 1 and 16" });
     expect(called).toBe(0);
   });
 

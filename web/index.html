@@ -261,17 +261,22 @@
         <label class="fieldlabel source-field">Source
           <select id="source" class="select">
             <option value="call" selected>Microphone and call</option>
-            <option value="desk">Two channels</option>
+            <option value="desk">Multi-channel input</option>
           </select>
         </label>
         <label class="fieldlabel" id="mic-field"><span id="mic-label">Microphone</span><select id="mic" class="select"><option value="builtin">Built-in microphone</option></select></label>
+        <label class="fieldlabel" id="desk-channels-field" hidden>Channels
+          <select id="desk-channels" class="select">
+            <option value="2">2</option><option value="3">3</option><option value="4" selected>4</option><option value="6">6</option><option value="8">8</option>
+          </select>
+        </label>
         <label class="fieldlabel" id="voices-field" title="How many people you will hear on the call. Voices beyond this count go to the closest one instead of becoming new speakers.">People on the call
           <select id="voices" class="select voices">
             <option value="0" selected>Any number</option><option value="1">1 on the call</option><option value="2">2 on the call</option><option value="3">3 on the call</option><option value="4">4 on the call</option>
           </select>
         </label>
       </div>
-      <p id="desk-note" class="note" hidden>Channel 1 is the interviewer and channel 2 is the guest. One person on each. Speaker mode stays off.</p>
+      <p id="desk-note" class="note" hidden>Each channel is captured separately as Channel 1, Channel 2, …: one person on each. Speaker mode stays off.</p>
       <div class="feat always">
         <span class="feat-text"><b>Transcript</b><span>Both streams recorded and transcribed live, speakers identified, a timeline to find your way around it, and chat about it.</span></span>
         <span class="feat-on">Always on</span>

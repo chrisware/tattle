@@ -1,7 +1,15 @@
 // Client state, built from GET /api/state plus the SSE event stream. Every update is idempotent by id,
 // because the event stream replays the session's history on connect.
 
-export type Stream = "host" | "remote";
+export type Stream = string;
+
+/** A stream's label: "Host" and "Call" for the classic pair, "Channel 3" for a desk input's ch3, else the id. */
+export function streamLabel(stream: Stream): string {
+  if (stream === "host") return "Host";
+  if (stream === "remote") return "Call";
+  const ch = /^ch(\d+)$/.exec(stream);
+  return ch ? `Channel ${ch[1]}` : stream;
+}
 
 export interface Speaker { id: string; displayName: string; mergedInto?: string }
 export interface Utterance {

@@ -5,7 +5,7 @@ import { desktop } from "./desktop.js";
 import { setRoute } from "./router.js";
 import { $, clock, glyph, h, icon, pluralOf, pretty, replace, usd } from "./dom.js";
 import { optionColor, optionName } from "./timeline.js";
-import { featuresOf, labelSetOf, resolveSpeaker, s1Counters, speakerName, type MissingLine, type Utterance, type Claim, type LabelSet, type Segment, type State, type Stats, type Stream } from "./state.js";
+import { featuresOf, labelSetOf, resolveSpeaker, s1Counters, speakerName, streamLabel, type MissingLine, type Utterance, type Claim, type LabelSet, type Segment, type State, type Stats, type Stream } from "./state.js";
 
 /**
  * The transcript's filters. `categories`: per category id, an option id or `group:<name>` (every option of that group,
@@ -72,6 +72,7 @@ export function ask(title: string, opts: { message?: string; input?: boolean; va
 
 const MIC_KEY = "pa.mic";
 const DESK_KEY = "pa.desk";
+const DESK_CHANNELS_KEY = "pa.deskchannels";
 const SOURCE_KEY = "pa.source";
 
 
@@ -87,14 +88,17 @@ export async function loadDevices() {
   if (label) label.textContent = desk ? "Input" : "Microphone";
   const voices = $("#voices-field");
   if (voices) voices.hidden = desk;
+  const channelsField = $("#desk-channels-field");
+  if (channelsField) channelsField.hidden = !desk;
   const note = $("#desk-note");
   if (note) note.hidden = !desk;
   let want = sel.value;
   try { want = localStorage.getItem(desk ? DESK_KEY : MIC_KEY) ?? want; } catch { /* storage may be unavailable */ }
   try {
     const devices = await api.devices();
+    const need = Number($<HTMLSelectElement>("#desk-channels")?.value) || 2;
     const list = desk
-      ? devices.filter((d) => (d.channels ?? 1) >= 2)
+      ? devices.filter((d) => (d.channels ?? 1) >= need)
       : devices.filter((d) => d.transport !== "builtin");
     replace(sel, ...(desk ? [] : [h("option", { value: "builtin" }, "Built-in microphone")]),
       ...list.map((d) => h("option", { value: d.uid }, `${d.name} (${d.transport})`)));
@@ -319,6 +323,9 @@ function openStartLive() {
   try {
     const saved = localStorage.getItem(SOURCE_KEY);
     if (source && (saved === "desk" || saved === "call")) source.value = saved;
+    const channels = $<HTMLSelectElement>("#desk-channels");
+    const savedChannels = localStorage.getItem(DESK_CHANNELS_KEY);
+    if (channels && savedChannels && [...channels.options].some((o) => o.value === savedChannels)) channels.value = savedChannels;
   } catch { /* storage may be unavailable */ }
   void loadDevices();
   // each show starts at "Any number": who is on the call changes from show to show
@@ -363,17 +370,19 @@ function bindStartLive() {
     if (preparing()) return;
     const desk = $<HTMLSelectElement>("#source")?.value === "desk";
     const mic = $<HTMLSelectElement>("#mic")?.value;
-    if (desk && !mic) return toast("Choose a two-channel input");
+    if (desk && !mic) return toast("Choose a multi-channel input");
+    const channels = Number($<HTMLSelectElement>("#desk-channels")?.value) || 2;
     const labelSet = lb ? labelPick()!.value : null;
     const stories = lb ? ($<HTMLTextAreaElement>("#start-stories")?.value ?? "").split("\n").map((x) => x.trim()).filter(Boolean) : [];
     try {
       if (mic) localStorage.setItem(desk ? DESK_KEY : MIC_KEY, mic);
+      if (desk) localStorage.setItem(DESK_CHANNELS_KEY, String(channels));
       if ($("#source")) localStorage.setItem(SOURCE_KEY, desk ? "desk" : "call");
       if (labelSet) localStorage.setItem(LABELS_KEY, labelSet);
     } catch { /* storage may be unavailable */ }
     void (async () => {
       try {
-        if (desk) await api.startDesk(mic!, features, { labelSet, stories });
+        if (desk) await api.startDesk(mic!, channels, features, { labelSet, stories });
         else await api.startLive(mic || undefined, voicesOnCall(), features, { labelSet, stories });
         $<HTMLDialogElement>("#dlg-start")!.close();
       } catch (e) {
@@ -391,6 +400,7 @@ function bindStartLive() {
     try { localStorage.setItem(SOURCE_KEY, $<HTMLSelectElement>("#source")!.value); } catch { /* storage may be unavailable */ }
     void loadDevices();
   });
+  $("#desk-channels")?.addEventListener("change", () => void loadDevices());
 }
 
 /** Opens a settings window from inside the page (the Transcription window, from Start live). */
@@ -585,25 +595,27 @@ export function renderHealth(st: State) {
   const paused = !!st.session?.paused;
   const running = st.session?.status === "running" && !paused;
   const streams: Stream[] = st.session?.streams ?? ["host", "remote"];
-  replace($("#health"), (["host", "remote"] as Stream[]).map((stream) => {
+  replace($("#health"), streams.map((stream, index) => {
     const hl = st.health[stream];
-    const present = streams.includes(stream);
     const now = Date.now();
     const age = hl ? hl.msSinceLastFrame + (now - hl.receivedAt) : -1;
     const silentFor = hl ? now - hl.lastSoundAt : 0;
-    const red = running && present && (!hl || silentFor > 10_000 || age > 3000);
+    const red = running && (!hl || silentFor > 10_000 || age > 3000);
     const pct = hl ? Math.max(0, Math.min(100, ((hl.rmsDbfs + 60) / 60) * 100)) : 0;
-    const device: string | undefined = stream === "host" ? hl?.detail?.host?.device : hl?.detail?.remote?.outputDevice;
+    const detail = hl?.detail as { streams?: { index?: number; device?: string }[]; host?: { device?: string }; remote?: { outputDevice?: string } } | undefined;
+    const device: string | undefined = Array.isArray(detail?.streams)
+      ? (detail.streams.find((x) => x.index === index) ?? detail.streams[index])?.device
+      : stream === "host" ? detail?.host?.device : detail?.remote?.outputDevice;
     const ageText = age < 0 ? "–" : age < 1000 ? `${age} ms` : `${(age / 1000).toFixed(1)} s`;
     // speaker mode: the microphone is muted while the call plays (most of the last second)
-    const muted = running && present && (hl?.echoMutedMs ?? 0) >= 500 && age <= 3000;
-    const meta = !present ? "absent" : paused ? "paused" : !hl ? "waiting…" : muted ? "muted · call playing"
+    const muted = running && (hl?.echoMutedMs ?? 0) >= 500 && age <= 3000;
+    const meta = paused ? "paused" : !hl ? "waiting…" : muted ? "muted · call playing"
       : `${minus(hl.rmsDbfs)} dBFS · ${red && silentFor > 10_000 ? `silent ${(silentFor / 1000).toFixed(0)} s` : ageText}`;
     return h("div", {
-      class: `meter${red ? " alert" : ""}${present ? "" : " absent"}${paused ? " paused" : ""}${muted ? " muted" : ""}`,
-      title: `${stream === "host" ? "Host" : "Remote"}${device ? ` · ${device}` : ""} · last frame ${ageText}`,
+      class: `meter${red ? " alert" : ""}${paused ? " paused" : ""}${muted ? " muted" : ""}`,
+      title: `${streamLabel(stream)}${device ? ` · ${device}` : ""} · last frame ${ageText}`,
     },
-      h("div", { class: "row1" }, h("span", { class: `who ${stream}` }, stream === "host" ? "Host" : "Remote"), device ? h("span", { class: "dev" }, device) : null),
+      h("div", { class: "row1" }, h("span", { class: `who ${stream}` }, streamLabel(stream)), device ? h("span", { class: "dev" }, device) : null),
       h("div", { class: "bar" }, h("b", { style: `width:${pct}%` })),
       h("div", { class: "meta" }, meta));
   }));
@@ -703,7 +715,7 @@ function openSpeaker(st: State, clickedId: string) {
   const others = [...st.speakers.values()].filter((s) => !s.mergedInto && s.id !== sp.id);
   const lines = [...st.utterances.values()].filter((u) => resolveSpeaker(st, u.speakerId)?.id === sp.id);
   const talkMs = lines.reduce((n, u) => n + (u.endMs - u.startMs), 0);
-  const streams = [...new Set(lines.map((u) => (u.stream === "host" ? "your mic" : "the call")))].join(" and ") || "no lines yet";
+  const streams = [...new Set(lines.map((u) => streamLabel(u.stream)))].join(" and ") || "no lines yet";
   const close = () => dlg.close();
 
   const input = h("input", { class: "input", value: sp.displayName, "aria-label": "Name" });
@@ -833,7 +845,7 @@ export function renderTranscript(st: State) {
       if (filters.speaker && sp?.id !== filters.speaker) continue;
       rows.push(h("div", { class: "utt live" },
         h("span", { class: "time" }, h("span", { class: "livedot", title: "Live text: the final line replaces it" })),
-        h("span", { class: `who-tab ${p.stream}` }, sp?.displayName ?? (p.stream === "host" ? "Host" : "Call")),
+        h("span", { class: `who-tab ${p.stream}` }, sp?.displayName ?? streamLabel(p.stream)),
         h("span", { class: "text" }, p.text)));
     }
   }
@@ -921,7 +933,7 @@ export function renderClaims(st: State) {
 /** The duplicate-speaker analysis of the session on screen: kept while the modal re-renders. */
 const suggest: {
   sessionId: string | null; loading: boolean; error: string | null; voices: number | null;
-  result: { suggestions: MergeSuggestion[]; voices: { host: number; remote: number } } | null;
+  result: { suggestions: MergeSuggestion[]; voices: Record<string, number> } | null;
 } = { sessionId: null, loading: false, error: null, voices: null, result: null };
 
 async function findDuplicates(st: State) {
@@ -929,8 +941,9 @@ async function findDuplicates(st: State) {
   suggest.error = null;
   renderSpeakers(st);
   try {
-    suggest.result = await api.suggestMerges(suggest.voices ?? undefined);
-    suggest.voices = suggest.result.voices.remote;
+    const hasCall = st.session?.streams?.includes("remote") ?? false;
+    suggest.result = await api.suggestMerges(hasCall ? suggest.voices ?? undefined : undefined);
+    suggest.voices = suggest.result.voices.remote ?? null;
   } catch (e) {
     suggest.error = e instanceof Error ? e.message : String(e);
   }
@@ -959,6 +972,7 @@ const CONFIDENCE_WORD = { high: "High confidence", medium: "Medium confidence", 
 function suggestionsPanel(st: State): HTMLElement {
   if (suggest.sessionId !== (st.session?.id ?? null)) Object.assign(suggest, { sessionId: st.session?.id ?? null, result: null, error: null, voices: null });
   const r = suggest.result;
+  const hasCall = st.session?.streams?.includes("remote") ?? false;
   const voices = h("select", { class: "select", id: "suggest-voices", "aria-label": "People on the call", disabled: suggest.loading },
     [1, 2, 3, 4].map((n) => h("option", { value: n, selected: (suggest.voices ?? r?.voices.remote ?? 2) === n }, `${n} on the call`)),
     h("option", { value: 0, selected: suggest.voices === 0 }, "Any number on the call"));
@@ -969,7 +983,7 @@ function suggestionsPanel(st: State): HTMLElement {
     h("div", { class: "suggest-head" },
       h("div", {}, h("h3", {}, "Duplicate speakers"),
         h("p", { class: "note" }, "Compares every speaker's voice with the others heard on the same stream and proposes which are the same person, with a voice-match score. Nothing merges until you click.")),
-      h("div", { class: "row" }, h("span", { class: "note" }, "1 on your mic,"), voices,
+      h("div", { class: "row" }, ...(hasCall ? [h("span", { class: "note" }, "1 on your mic,"), voices] : []),
         h("button", { class: "btn primary", disabled: suggest.loading, onclick: () => void findDuplicates(st) }, suggest.loading ? "Analysing voices…" : r ? "Analyse again" : "Find duplicates"))),
     suggest.loading ? h("p", { class: "note" }, "Listening to each speaker's lines. A two-hour recording takes about half a minute.") : null,
     suggest.error ? h("p", { class: "error-text" }, suggest.error) : null,
@@ -981,7 +995,7 @@ function suggestionsPanel(st: State): HTMLElement {
             h("span", { class: "sugg-names" }, h("b", {}, m.fromName), h("span", { class: "arrow" }, "→"), h("b", {}, m.intoName)),
             h("span", { class: "sugg-conf" }, CONFIDENCE_WORD[m.confidence]),
             h("span", { class: "sugg-score" }, m.similarity === null ? "no voiceprint" : `voice match ${Math.round(m.similarity * 100)}%`),
-            h("span", { class: "sugg-why" }, `${m.stream === "host" ? "Your mic" : "The call"}: ${m.reason}.`),
+            h("span", { class: "sugg-why" }, `${streamLabel(m.stream)}: ${m.reason}.`),
             h("button", { class: "btn sm", onclick: () => void applyMerges(st, [m]) }, "Merge")))),
           h("div", { class: "row end" },
             sure.length && sure.length < list.length
