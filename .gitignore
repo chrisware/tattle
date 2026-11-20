@@ -15,10 +15,14 @@
 # ------------------------------------------------------------
 sessions/
 fixtures/
-# ...but not the tests' own small JSON fixtures (label-set and session definitions, no audio or transcript)
-!tests/fixtures/
 data/
 models/
+# A git worktree links `fixtures/` and `models/` in from the main checkout;
+# the directory rules above do not match those symlinks.
+/fixtures
+/models
+# ...but not the tests' own small JSON fixtures (label-set and session definitions, no audio or transcript)
+!tests/fixtures/
 *.onnx
 *.jsonl
 *.wav
