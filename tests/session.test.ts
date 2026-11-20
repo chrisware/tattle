@@ -10,9 +10,10 @@ import { EventBus, redactor } from "../src/store/events.ts";
 import { JSONL_FILES } from "../src/store/sessionStore.ts";
 import { Engine } from "../src/server/main.ts";
 import { FIXTURE_DIR, loadScript, requireAssets } from "./helpers.ts";
-import { fakeServicesFetch as fakeFetch, TEST_OPENAI_KEY as OPENAI, TEST_OPENROUTER_KEY as ECHOED } from "./fakes/index.ts";
+import { fakeServicesFetch as fakeFetch, TEST_OPENAI_KEY as OPENAI, TEST_TYPESAFE_KEY as TYPESAFE } from "./fakes/index.ts";
 
-const TYPESAFE = "ts-test-key-000000000000000000";
+// The fake's first Jev call echoes the key it was sent (Jev answers TypeSafe, so that is the TypeSafe key).
+const ECHOED = TYPESAFE;
 describe("session (offline, fake services)", () => {
   test("runs the fixture end to end; no event or session file contains either API key", async () => {
     requireAssets();

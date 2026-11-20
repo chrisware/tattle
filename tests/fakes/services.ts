@@ -1,7 +1,7 @@
 import type { loadScript } from "../helpers.ts";
 
-export const TEST_OPENROUTER_KEY = "sk-or-v1-test-openrouter-key-0123456789";
 export const TEST_OPENAI_KEY = "sk-proj-test-openai-key-9876543210";
+export const TEST_TYPESAFE_KEY = "ts-test-key-000000000000000000";
 
 /**
  * A fake of all three services behind fetch. Transcription returns the scripted line by time; Jev flags lines whose
@@ -29,7 +29,7 @@ export function fakeServicesFetch(script: ReturnType<typeof loadScript>, opts: {
       const body = JSON.parse(init.body as string);
       if (!echoed) {
         echoed = true;
-        return json({ error: { code: 401, message: `invalid key ${TEST_OPENROUTER_KEY}` } }, 400);
+        return json({ error: { code: 401, message: `invalid key ${TEST_TYPESAFE_KEY}` } }, 400);
       }
       const answers: Record<string, unknown> = {};
       const st = body.state;

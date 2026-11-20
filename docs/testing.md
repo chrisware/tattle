@@ -64,7 +64,7 @@ Every change to Tattle is test-first (the rule is in [CLAUDE.md](../CLAUDE.md)).
 
 | Fake | Imitates |
 |---|---|
-| `fakeServicesFetch(script)`, `TEST_OPENROUTER_KEY`, `TEST_OPENAI_KEY` | OpenAI transcription, Jev and System 2 behind one `fetch`, answering from the fixture's script (the first Jev call echoes the key in an error, to prove redaction) |
+| `fakeServicesFetch(script)`, `TEST_TYPESAFE_KEY`, `TEST_OPENAI_KEY` | OpenAI transcription, Jev and System 2 behind one `fetch`, answering from the fixture's script (the first Jev call echoes the TypeSafe key in an error, to prove redaction) |
 | `FakeJev`, `jevOk`, `jevErr`, `noulA`, `choiceA`, `scoreA` | Jev's decisions endpoint: a queue of responders, recording every parsed request |
 | `FakeOpenRouter`, `completion`, `replyChunks`, `fakeOpenRouter` | The chat HTTP fake, still shaped like OpenRouter's chat side: `/models`, `/chat/completions` (streamed or not) and `/generation?id=`; `fakeOpenRouter` is the chat tests' simpler one. Production chat calls OpenAI and does not look up `/generation`. |
 | `fakeKeyCheckFetch` | The key checks: OpenAI's and TypeSafe's `GET /v1/models`, or offline |

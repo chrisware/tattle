@@ -174,15 +174,20 @@ describe("npm run replay", () => {
   test("the fixture at full speed, with every feature: each event printed, then the summary and the export", async () => {
     const script = loadScript();
     const services = fakeServicesFetch(script).f;
-    // System 2's first research fails (the claim is dropped); its second verdict carries a correction
+    // System 2's first research fails (the claim is dropped); its second verdict carries a correction.
+    // Research on api.openai.com goes through the Responses API; chat/completions carries the audit and rewrite calls.
     let verdicts = 0;
     const f = (async (url: string, init: RequestInit) => {
-      if (url.includes("chat/completions") && JSON.parse(String(init.body)).response_format?.json_schema?.name === "verdict") {
-        verdicts++;
-        if (verdicts === 1) return new Response(JSON.stringify({ error: { code: 400, message: "bad request" } }), { status: 400 });
-        if (verdicts === 2) {
-          const content = { restated_claim: "A claim.", verdict: "contradicted", correction: "It is cheaper.", confidence: "high", false_alarm_reason: "none", sources: [{ url: "https://example.com/b", title: "B" }] };
-          return new Response(JSON.stringify({ id: "gen-2", model: "openai/gpt-6-luna", provider: "OpenAI", choices: [{ message: { content: JSON.stringify(content), annotations: [] } }], usage: { prompt_tokens: 10, completion_tokens: 10, cost: 0.0003 } }));
+      if (url.includes("chat/completions") || url.includes("/responses")) {
+        const body = JSON.parse(String(init.body));
+        const schema = body.response_format?.json_schema?.name ?? body.text?.format?.name;
+        if (schema === "verdict") {
+          verdicts++;
+          if (verdicts === 1) return new Response(JSON.stringify({ error: { code: 400, message: "bad request" } }), { status: 400 });
+          if (verdicts === 2) {
+            const content = { restated_claim: "A claim.", verdict: "contradicted", correction: "It is cheaper.", confidence: "high", false_alarm_reason: "none", sources: [{ url: "https://example.com/b", title: "B" }] };
+            return new Response(JSON.stringify({ id: "gen-2", model: "openai/gpt-6-luna", provider: "OpenAI", choices: [{ message: { content: JSON.stringify(content), annotations: [] } }], usage: { prompt_tokens: 10, completion_tokens: 10, cost: 0.0003 } }));
+          }
         }
       }
       return services(url, init);
