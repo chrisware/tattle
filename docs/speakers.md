@@ -43,7 +43,9 @@ Why the limit: a threshold alone cannot hold a voice together through a call cod
 | Same AI voice through system audio (ChatGPT) | 0.83 – 0.95 |
 | Host vs ChatGPT | 0.19 – 0.34 |
 | Fixture: Samantha vs Daniel (macOS `say`) | 0.63 |
-| Fixture: Samantha vs Karen | 0.86 — why the fixture uses Sandy instead of Karen |
+| Fixture: Samantha vs Karen | 0.86 — why the fixture's third voice is Kate (Enhanced), not Karen |
+
+The third voice was Sandy (UK) until 21 November 2026, when it scored above 0.65 against Daniel (`npm run calibrate:speakers` then found 2 speakers) and the fixture moved to Kate (Enhanced), the UK enhanced voice installed on this Mac, which the same run separates at 0.65–0.75. `Samantha (Enhanced)` is not used: `say` writes the same audio as the standard Samantha on this Mac.
 
 0.65 leaves margin under the lowest same-voice score and is the lowest value that still separates the fixture's three voices (`npm run calibrate:speakers` on the fixture gives 3 speakers at 0.65–0.75). Real co-hosts through Riverside's codec may score differently: calibrate on an old episode before the show (see [Rehearsal kit](rehearsal.md)).
 

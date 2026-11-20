@@ -131,5 +131,5 @@ Confirmed while making the project test-driven, 30 September 2026 (see [Testing]
 
 ## Test fixture
 
-- **macOS `say` voices Samantha and Karen are nearly the same voiceprint** (0.86 cosine), so no usable threshold separates them. The fixture uses Sandy (UK) for the third voice; the lines still call her "Karen".
-- **Silero misses Sandy's opening "Oh it was beautiful,"**, so that line reads "It was absolutely beautiful". Keep fixture lines to one sentence each: a sentence pause can exceed the VAD's 0.5 s silence and split a line in two.
+- **macOS `say` voices Samantha and Karen are nearly the same voiceprint** (0.86 cosine), so no usable threshold separates them. The fixture's third voice is Kate (Enhanced), the UK enhanced voice, since 21 November 2026: Sandy (UK), the one before it, scored above the 0.65 threshold against Daniel on this Mac's voices, so the registry merged them and found 2 speakers. The lines still call her "Karen".
+- **Silero misses Kate's opening "Oh it was beautiful,"**, so that line reads "It was absolutely beautiful". Keep fixture lines to one sentence each: a sentence pause can exceed the VAD's 0.5 s silence and split a line in two.

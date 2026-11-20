@@ -72,7 +72,7 @@ Requires Node 24, macOS on Apple Silicon, and the Xcode command-line tools (for 
 ```bash
 npm install
 npm run models                           # Silero VAD + WeSpeaker speaker-embedding models into models/
-npm run fixtures                         # a scripted ~78 s test conversation into fixtures/conversation/
+npm run fixtures                         # a scripted ~70 s test conversation into fixtures/conversation/
 npm run build:capture                    # the tattle-capture Swift helper
 npm run build:transcribe                 # the tattle-transcribe Swift helper (on-device transcription, macOS 26+)
 npm run serve                            # then open http://127.0.0.1:4317
