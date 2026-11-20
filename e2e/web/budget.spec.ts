@@ -11,7 +11,7 @@ test("a Jev 402 stops fact-checking, says so in the spend, and the transcript go
   await page.getByRole("button", { name: "Max" }).click();
   await page.locator("#start-replay").click();
   await expect(page.locator("#cost")).toHaveClass(/exhausted/, { timeout: 60_000 });
-  await expect(page.locator("#cost .error-text")).toHaveText("The Jev provider refused the request (402)");
+  await expect(page.locator("#cost .error-text")).toHaveText("The Jev provider refused the request (402): the credit is used up");
   await expect(page).toHaveURL(/\/recordings\/\d{8}-\d{6}$/, { timeout: 150_000 });
   await expect(page.locator("#transcript .utt").first()).toBeVisible();
   await expect(page.locator("#claims article.fc")).toHaveCount(0);
